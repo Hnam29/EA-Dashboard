@@ -61,24 +61,6 @@ def inject_css() -> None:
         border-right: 1px solid rgba(255,255,255,0.04);
     }
 
-    /* Nút Mở lại sidebar khi bị collapse – tô màu xanh EA để dễ thấy */
-    [data-testid="collapsedControl"] {
-        background-color: rgba(0,179,126,0.25) !important;
-        border-top-right-radius:    8px !important;
-        border-bottom-right-radius: 8px !important;
-        border-right:  2px solid rgba(0,179,126,0.6) !important;
-        border-top:    2px solid rgba(0,179,126,0.6) !important;
-        border-bottom: 2px solid rgba(0,179,126,0.6) !important;
-    }
-    [data-testid="collapsedControl"]:hover {
-        background-color: rgba(0,179,126,0.45) !important;
-    }
-    [data-testid="collapsedControl"] svg {
-        color: #00B37E !important;
-        fill:  #00B37E !important;
-    }
-
-
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0A0F1E; }
@@ -173,6 +155,35 @@ def inject_css() -> None:
     </style>
     """, unsafe_allow_html=True)
 
+
+
+# ── Sidebar toggle (Streamlit-native, 100% đáng tin cậy) ────────────────────
+
+def render_sidebar_toggle() -> None:
+    """
+    Hiển thị nút Ẩn/Hiện Sidebar bằng Streamlit button thuần túy.
+    Gọi ngay sau inject_css() ở mỗi page.
+    """
+    if "sidebar_open" not in st.session_state:
+        st.session_state["sidebar_open"] = True
+
+    is_open = st.session_state["sidebar_open"]
+
+    # Ẩn sidebar bằng CSS khi đang đóng
+    if not is_open:
+        st.markdown("""
+        <style>
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+    # Nút toggle luôn nằm ở đầu trang
+    label = "◀ Ẩn bộ lọc" if is_open else "▶ Hiện bộ lọc"
+    if st.button(label, key="__sidebar_toggle__", help="Ẩn/Hiện thanh bộ lọc"):
+        st.session_state["sidebar_open"] = not is_open
+        st.rerun()
 
 
 # ── Header EA ─────────────────────────────────────────────────────────────────

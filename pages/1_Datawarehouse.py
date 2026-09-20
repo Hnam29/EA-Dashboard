@@ -18,8 +18,8 @@ from services.gsheet import (
     delete_row_by_index, export_df_to_new_sheet, log_action,
 )
 from components.ui import (
-    inject_css, render_page_header, render_user_card, section_header,
-    metrics_row, chart_bar_h, chart_donut, chart_funnel,
+    inject_css, render_page_header, render_user_card, section_header, render_sidebar_toggle,
+    metrics_row, chart_bar_h, chart_donut, chart_funnel, render_sidebar_toggle,
 )
 
 # ── Cấu hình trang ────────────────────────────────────────────────────────────
@@ -32,6 +32,7 @@ st.set_page_config(
 
 require_auth()
 inject_css()
+render_sidebar_toggle()
 
 user  = get_current_user()
 role  = get_current_role()

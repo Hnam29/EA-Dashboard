@@ -31,6 +31,7 @@ st.set_page_config(
 
 require_auth()
 inject_css()
+render_sidebar_toggle()
 
 user  = get_current_user()
 role  = get_current_role()
