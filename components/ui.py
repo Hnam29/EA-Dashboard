@@ -55,43 +55,12 @@ def inject_css() -> None:
     /* Hide branding */
     #MainMenu, footer, header { visibility: hidden; }
 
-    /* Sidebar – cho phép collapse/expand bình thường */
+    /* Sidebar background */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0A1628 0%, #0A0F1E 100%);
         border-right: 1px solid rgba(255,255,255,0.04);
     }
 
-    /* Nút Mở lại sidebar (‹) – luôn hiển thị rõ ràng để user không bị mất sidebar */
-    [data-testid="collapsedControl"] {
-        display:    flex       !important;
-        visibility: visible    !important;
-        opacity:    1          !important;
-        width:      2.2rem     !important;
-        height:     2.2rem     !important;
-        background: rgba(0,179,126,0.15) !important;
-        border:     1px solid rgba(0,179,126,0.4) !important;
-        border-radius: 0 8px 8px 0  !important;
-        margin-top: 1rem       !important;
-        box-shadow: 2px 0 12px rgba(0,179,126,0.2) !important;
-    }
-    [data-testid="collapsedControl"]:hover {
-        background: rgba(0,179,126,0.3) !important;
-    }
-    [data-testid="collapsedControl"] svg {
-        color: #00B37E !important;
-        fill:  #00B37E !important;
-    }
-
-    /* Nút Thu gọn sidebar (›) bên trong – hiển thị bình thường */
-    [data-testid="stSidebarCollapseButton"] button,
-    section[data-testid="stSidebar"] button[kind="header"] {
-        visibility: visible !important;
-        opacity: 0.5 !important;
-    }
-    [data-testid="stSidebarCollapseButton"] button:hover,
-    section[data-testid="stSidebar"] button[kind="header"]:hover {
-        opacity: 1 !important;
-    }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
