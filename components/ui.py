@@ -6,6 +6,7 @@ Tất cả biểu đồ dùng dark theme nhất quán với màu brand EA (#00B3
 import base64
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import pandas as pd
 from typing import List, Tuple, Any
@@ -54,7 +55,14 @@ def inject_css() -> None:
     /* Hide branding */
     #MainMenu, footer, header { visibility: hidden; }
 
-    /* Luôn hiển thị nút mở sidebar khi đã đăng nhập */
+    /* Ẩn nút thu gọn sidebar – người dùng không thể collapse sidebar trên dashboard */
+    [data-testid="stSidebarCollapseButton"],
+    section[data-testid="stSidebar"] button[kind="header"],
+    section[data-testid="stSidebar"] > div > div > div > div > div > button:first-child {
+        display: none !important;
+    }
+
+    /* Luôn hiển thị nút mở lại sidebar phòng khi bị collapse */
     [data-testid="collapsedControl"] {
         display: flex !important;
         visibility: visible !important;
@@ -160,6 +168,25 @@ def inject_css() -> None:
     }
     </style>
     """, unsafe_allow_html=True)
+
+    # ── JavaScript: tự động mở lại sidebar nếu bị collapse ─────────────────────
+    # [data-testid="collapsedControl"] chỉ tồn tại trong DOM khi sidebar ĐANG ẨN
+    # → click vào nó sẽ mở sidebar, sau đó element tự biến mất → không bị loop
+    components.html("""
+    <script>
+    (function() {
+        var doc = window.parent.document;
+        function expandIfCollapsed() {
+            var btn = doc.querySelector('[data-testid="collapsedControl"]');
+            if (btn) { btn.click(); }
+        }
+        expandIfCollapsed();
+        setTimeout(expandIfCollapsed, 300);
+        setTimeout(expandIfCollapsed, 800);
+        setTimeout(expandIfCollapsed, 1500);
+    })();
+    </script>
+    """, height=0, scrolling=False)
 
 
 # ── Header EA ─────────────────────────────────────────────────────────────────
