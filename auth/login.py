@@ -268,6 +268,16 @@ def _render_login_page() -> None:
                         user = authenticate(username, password)
                     if user:
                         login(user)
+                        # Xóa localStorage để sidebar luôn mở sau khi đăng nhập
+                        st.markdown("""
+                        <script>
+                        try {
+                            Object.keys(localStorage).forEach(function(k) {
+                                if (k.indexOf('sidebar') !== -1) localStorage.removeItem(k);
+                            });
+                        } catch(e) {}
+                        </script>
+                        """, unsafe_allow_html=True)
                         st.success(f"✅ Chào mừng **{user.get('full_name', username)}**!")
                         st.rerun()
                     else:

@@ -61,6 +61,23 @@ def inject_css() -> None:
         border-right: 1px solid rgba(255,255,255,0.04);
     }
 
+    /* Nút Mở lại sidebar khi bị collapse – tô màu xanh EA để dễ thấy */
+    [data-testid="collapsedControl"] {
+        background-color: rgba(0,179,126,0.25) !important;
+        border-top-right-radius:    8px !important;
+        border-bottom-right-radius: 8px !important;
+        border-right:  2px solid rgba(0,179,126,0.6) !important;
+        border-top:    2px solid rgba(0,179,126,0.6) !important;
+        border-bottom: 2px solid rgba(0,179,126,0.6) !important;
+    }
+    [data-testid="collapsedControl"]:hover {
+        background-color: rgba(0,179,126,0.45) !important;
+    }
+    [data-testid="collapsedControl"] svg {
+        color: #00B37E !important;
+        fill:  #00B37E !important;
+    }
+
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
