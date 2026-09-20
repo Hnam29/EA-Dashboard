@@ -55,30 +55,35 @@ def inject_css() -> None:
     /* Hide branding */
     #MainMenu, footer, header { visibility: hidden; }
 
-    /* Ẩn nút thu gọn sidebar – người dùng không thể collapse sidebar trên dashboard */
-    [data-testid="stSidebarCollapseButton"],
-    section[data-testid="stSidebar"] button[kind="header"],
-    section[data-testid="stSidebar"] > div > div > div > div > div > button:first-child {
-        display: none !important;
-    }
-
-    /* Luôn hiển thị nút mở lại sidebar phòng khi bị collapse */
-    [data-testid="collapsedControl"] {
+    /* ======================================================
+       SIDEBAR – LUÔN MỞ, KHÔNG THỂ COLLAPSE
+       Streamlit ẩn sidebar bằng transform: translateX(-105%)
+       → override bằng !important để sidebar luôn hiện ra
+    ====================================================== */
+    section[data-testid="stSidebar"] {
+        transform: translateX(0) !important;
+        min-width: 244px !important;
+        max-width: 300px !important;
         display: flex !important;
         visibility: visible !important;
-        opacity: 1 !important;
+        background: linear-gradient(180deg, #0A1628 0%, #0A0F1E 100%);
+        border-right: 1px solid rgba(255,255,255,0.04);
+    }
+    section[data-testid="stSidebar"] > div {
+        transform: translateX(0) !important;
+    }
+
+    /* Ẩn tất cả nút collapse/expand – sidebar luôn mở nên không cần */
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="collapsedControl"],
+    section[data-testid="stSidebar"] button[kind="header"] {
+        display: none !important;
     }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0A0F1E; }
     ::-webkit-scrollbar-thumb { background: rgba(0,179,126,0.4); border-radius: 3px; }
-
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0A1628 0%, #0A0F1E 100%);
-        border-right: 1px solid rgba(255,255,255,0.04);
-    }
 
     /* Metric card */
     .metric-card {
@@ -169,24 +174,6 @@ def inject_css() -> None:
     </style>
     """, unsafe_allow_html=True)
 
-    # ── JavaScript: tự động mở lại sidebar nếu bị collapse ─────────────────────
-    # [data-testid="collapsedControl"] chỉ tồn tại trong DOM khi sidebar ĐANG ẨN
-    # → click vào nó sẽ mở sidebar, sau đó element tự biến mất → không bị loop
-    components.html("""
-    <script>
-    (function() {
-        var doc = window.parent.document;
-        function expandIfCollapsed() {
-            var btn = doc.querySelector('[data-testid="collapsedControl"]');
-            if (btn) { btn.click(); }
-        }
-        expandIfCollapsed();
-        setTimeout(expandIfCollapsed, 300);
-        setTimeout(expandIfCollapsed, 800);
-        setTimeout(expandIfCollapsed, 1500);
-    })();
-    </script>
-    """, height=0, scrolling=False)
 
 
 # ── Header EA ─────────────────────────────────────────────────────────────────
