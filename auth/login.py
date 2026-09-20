@@ -139,6 +139,10 @@ def _render_login_page() -> None:
 
     #MainMenu, footer, header { visibility: hidden; }
 
+    /* Ẩn hoàn toàn sidebar trên trang login */
+    section[data-testid="stSidebar"] { display: none !important; }
+    [data-testid="collapsedControl"]  { display: none !important; }
+
     .login-wrap {
         display: flex;
         align-items: center;

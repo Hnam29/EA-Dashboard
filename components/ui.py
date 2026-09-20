@@ -54,6 +54,13 @@ def inject_css() -> None:
     /* Hide branding */
     #MainMenu, footer, header { visibility: hidden; }
 
+    /* Luôn hiển thị nút mở sidebar khi đã đăng nhập */
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0A0F1E; }
@@ -249,13 +256,21 @@ def chart_bar_h(df: pd.DataFrame, group_col: str, title: str, max_rows: int = 15
 
 
 def chart_donut(df: pd.DataFrame, group_col: str, title: str, max_slices: int = 6) -> None:
-    """Donut chart – top N theo group_col."""
+    """Donut chart – top N theo group_col. Tự động loại bỏ giá trị 'Khác' có trong data."""
     if group_col not in df.columns or df.empty:
         st.info(f"Không có dữ liệu cột '{group_col}'.")
         return
 
-    data = df[group_col].value_counts().head(max_slices)
-    others = df[group_col].value_counts().iloc[max_slices:].sum()
+    # Loại bỏ giá trị 'Khác' và giá trị trống khỏi dữ liệu gốc trước khi vẽ
+    exclude = {"khác", "", "nan", "none"}
+    df_clean = df[~df[group_col].astype(str).str.strip().str.lower().isin(exclude)]
+
+    if df_clean.empty:
+        st.info(f"Không có dữ liệu hợp lệ để hiển thị.")
+        return
+
+    data   = df_clean[group_col].value_counts().head(max_slices)
+    others = df_clean[group_col].value_counts().iloc[max_slices:].sum()
     labels = data.index.tolist()
     values = data.values.tolist()
     if others > 0:
@@ -281,39 +296,37 @@ def chart_donut(df: pd.DataFrame, group_col: str, title: str, max_slices: int = 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
-def chart_stacked_pct(df: pd.DataFrame, group_col: str, title: str, max_cats: int = 8) -> None:
-    """Stacked horizontal bar – tỷ lệ phần trăm theo group_col."""
+def chart_funnel(df: pd.DataFrame, group_col: str, title: str, max_cats: int = 8) -> None:
+    """Funnel chart – hiển thị số lượng và tỷ lệ theo group_col (giảm dần)."""
     if group_col not in df.columns or df.empty:
         st.info(f"Không có dữ liệu cột '{group_col}'.")
         return
 
-    counts = df[group_col].value_counts().head(max_cats)
-    total  = counts.sum()
+    # Loại bỏ giá trị rống/không hợp lệ
+    exclude = {"", "nan", "none"}
+    df_clean = df[~df[group_col].astype(str).str.strip().str.lower().isin(exclude)]
+    counts = df_clean[group_col].value_counts().head(max_cats)
 
-    fig = go.Figure()
-    for i, (cat, cnt) in enumerate(counts.items()):
-        pct = cnt / total * 100
-        fig.add_trace(go.Bar(
-            name=f"{cat}",
-            y=[""],
-            x=[cnt],
-            orientation="h",
-            marker_color=PALETTE[i % len(PALETTE)],
-            hovertemplate=f"<b>{cat}</b>: {{x:,}} ({pct:.1f}%)<extra></extra>",
-            text=f"  {cat}: {cnt:,}",
-            textposition="inside",
-            textfont=dict(size=9, color="white"),
-            showlegend=True,
-        ))
+    if counts.empty:
+        st.info("Không có dữ liệu để hiển thị.")
+        return
 
+    fig = go.Figure(go.Funnel(
+        y=counts.index.tolist(),
+        x=counts.values.tolist(),
+        textposition="inside",
+        textinfo="value+percent total",
+        textfont=dict(color="white", size=10),
+        marker=dict(
+            color=PALETTE[:len(counts)],
+            line=dict(width=1, color="#0A0F1E"),
+        ),
+        connector=dict(visible=False),
+        hovertemplate="<b>%{y}</b>: %{x:,} (%{percentTotal})<extra></extra>",
+    ))
     fig.update_layout(
-        barmode="stack",
         title=dict(text=title, font=dict(size=13, color="#CBD5E1"), x=0.5, xanchor="center"),
-        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-        yaxis=dict(showgrid=False, showticklabels=False),
-        legend=dict(font=dict(color="#94A3B8", size=9), bgcolor="rgba(0,0,0,0)",
-                    orientation="v", x=1.01, y=1),
-        height=180,
+        height=360,
         **CHART_LAYOUT,
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})

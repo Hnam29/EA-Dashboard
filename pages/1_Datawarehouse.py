@@ -19,7 +19,7 @@ from services.gsheet import (
 )
 from components.ui import (
     inject_css, render_page_header, render_user_card, section_header,
-    metrics_row, chart_bar_h, chart_donut, chart_stacked_pct,
+    metrics_row, chart_bar_h, chart_donut, chart_funnel,
 )
 
 # ── Cấu hình trang ────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ with c1:
 with c2:
     chart_donut(df, COL_ID,     "🔵 Top 6 ID theo số lượng data",     max_slices=6)
 with c3:
-    chart_stacked_pct(df, COL_CHUCVU, "📧 Tỷ lệ các loại chức vụ")
+    chart_funnel(df, COL_CHUCVU, "📊 Tỷ lệ các loại chức vụ")
 
 st.divider()
 
