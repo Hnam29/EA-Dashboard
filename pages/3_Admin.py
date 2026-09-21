@@ -19,6 +19,7 @@ from services.gsheet import (
 )
 from components.ui import (
     inject_css, render_page_header, render_user_card, section_header, metrics_row,
+    render_sidebar_toggle,
 )
 
 # ── Cấu hình trang ────────────────────────────────────────────────────────────

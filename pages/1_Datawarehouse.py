@@ -18,7 +18,7 @@ from services.gsheet import (
     delete_row_by_index, export_df_to_new_sheet, log_action,
 )
 from components.ui import (
-    inject_css, render_page_header, render_user_card, section_header, render_sidebar_toggle,
+    inject_css, render_page_header, render_user_card, section_header,
     metrics_row, chart_bar_h, chart_donut, chart_funnel, render_sidebar_toggle,
 )
 
