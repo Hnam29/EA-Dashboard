@@ -53,7 +53,7 @@ def inject_css() -> None:
     html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
 
     /* Hide branding */
-    #MainMenu, footer, header { visibility: hidden; }
+    #MainMenu, footer { visibility: hidden; }
 
     /* Sidebar background */
     section[data-testid="stSidebar"] {
@@ -155,35 +155,6 @@ def inject_css() -> None:
     </style>
     """, unsafe_allow_html=True)
 
-
-
-# ── Sidebar toggle (Streamlit-native, 100% đáng tin cậy) ────────────────────
-
-def render_sidebar_toggle() -> None:
-    """
-    Hiển thị nút Ẩn/Hiện Sidebar bằng Streamlit button thuần túy.
-    Gọi ngay sau inject_css() ở mỗi page.
-    """
-    if "sidebar_open" not in st.session_state:
-        st.session_state["sidebar_open"] = True
-
-    is_open = st.session_state["sidebar_open"]
-
-    # Ẩn sidebar bằng CSS khi đang đóng
-    if not is_open:
-        st.markdown("""
-        <style>
-        section[data-testid="stSidebar"] {
-            display: none !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-    # Nút toggle luôn nằm ở đầu trang
-    label = "◀ Ẩn bộ lọc" if is_open else "▶ Hiện bộ lọc"
-    if st.button(label, key="__sidebar_toggle__", help="Ẩn/Hiện thanh bộ lọc"):
-        st.session_state["sidebar_open"] = not is_open
-        st.rerun()
 
 
 # ── Header EA ─────────────────────────────────────────────────────────────────
