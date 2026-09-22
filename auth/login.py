@@ -155,7 +155,7 @@ def _render_login_page() -> None:
         border: 1px solid rgba(0,179,126,0.2);
         border-radius: 20px;
         padding: 3rem 2.5rem;
-        max-width: 420px;
+        margin: 0 auto;
         width: 100%;
         backdrop-filter: blur(20px);
         box-shadow: 0 40px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
