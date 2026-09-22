@@ -7,7 +7,7 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 SCOPES = [
@@ -153,8 +153,9 @@ def export_df_to_new_sheet(df: pd.DataFrame, new_sheet_name: str) -> bool:
 def log_action(username: str, action: str, details: str) -> None:
     """Ghi lại thao tác người dùng vào sheet audit_log (không hiện lỗi ra UI)."""
     try:
+        vn_tz = timezone(timedelta(hours=7))
         append_row("audit_log", {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": datetime.now(vn_tz).strftime("%Y-%m-%d %H:%M:%S"),
             "username":  username,
             "action":    action,
             "details":   details,
