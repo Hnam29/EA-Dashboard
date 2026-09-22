@@ -150,7 +150,7 @@ def _render_login_page() -> None:
         min-height: 85vh;
     }
 
-    .login-card {
+    [data-testid="stForm"] {
         background: rgba(255,255,255,0.03);
         border: 1px solid rgba(0,179,126,0.2);
         border-radius: 20px;
@@ -163,7 +163,7 @@ def _render_login_page() -> None:
         overflow: hidden;
     }
 
-    .login-card::before {
+    [data-testid="stForm"]::before {
         content: '';
         position: absolute;
         top: 0; left: 0; right: 0;
@@ -228,7 +228,6 @@ def _render_login_page() -> None:
 
     col_l, col_mid, col_r = st.columns([1, 1.4, 1])
     with col_mid:
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
 
         # Logo
         st.markdown(f"""
