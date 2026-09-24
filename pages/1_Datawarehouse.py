@@ -97,16 +97,12 @@ with st.sidebar:
     sel_status = st.selectbox("STATUS", status_opts, label_visibility="collapsed", key="dw_status")
 
     section_header("ID / Phân khúc")
-    id_opts = sorted({v for v in df_raw.get(COL_ID, pd.Series()).dropna().unique() if v and v != "nan"})
+    id_opts = sorted({str(v).split('-')[0] for v in df_raw.get(COL_ID, pd.Series()).dropna().unique() if v and str(v) != "nan"})
     sel_ids = st.multiselect("ID", id_opts, placeholder="Tất cả", key="dw_id")
 
-    section_header("Chức vụ / Loại email")
-    cv_opts = sorted({v for v in df_raw.get(COL_CHUCVU, pd.Series()).dropna().unique() if v and v != "nan"})
-    sel_cv = st.multiselect("Chức vụ", cv_opts, placeholder="Tất cả", key="dw_cv")
-
-    section_header("Tình trạng Email")
-    es_opts = sorted({v for v in df_raw.get(COL_EMAIL_STATUS, pd.Series()).dropna().unique() if v and v != "nan"})
-    sel_es = st.multiselect("Tình trạng", es_opts, placeholder="Tất cả", key="dw_es")
+    section_header("Nhóm (Dự án)")
+    nhom_opts = sorted({v for v in df_raw.get(COL_NHOM, pd.Series()).dropna().unique() if v and str(v) != "nan"})
+    sel_nhom = st.multiselect("Nhóm", nhom_opts, placeholder="Tất cả", key="dw_nhom")
 
     section_header("Tỉnh/TP")
     tinh_opts = ["Tất cả"] + sorted({v for v in df_raw.get(COL_TINH, pd.Series()).dropna().unique() if v and v != "nan"})
@@ -126,11 +122,9 @@ df = df_raw.copy()
 if sel_status != "Tất cả" and COL_STATUS in df.columns:
     df = df[df[COL_STATUS].str.upper() == sel_status]
 if sel_ids and COL_ID in df.columns:
-    df = df[df[COL_ID].isin(sel_ids)]
-if sel_cv and COL_CHUCVU in df.columns:
-    df = df[df[COL_CHUCVU].isin(sel_cv)]
-if sel_es and COL_EMAIL_STATUS in df.columns:
-    df = df[df[COL_EMAIL_STATUS].isin(sel_es)]
+    df = df[df[COL_ID].apply(lambda x: str(x).split('-')[0]).isin(sel_ids)]
+if sel_nhom and COL_NHOM in df.columns:
+    df = df[df[COL_NHOM].isin(sel_nhom)]
 if sel_tinh != "Tất cả" and COL_TINH in df.columns:
     df = df[df[COL_TINH] == sel_tinh]
 if search_ten and COL_TEN in df.columns:
