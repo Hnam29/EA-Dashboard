@@ -93,7 +93,10 @@ with st.sidebar:
 
     # ── Filters ──────────────────────────────────────────────────────────────
     section_header("Trạng thái")
-    status_opts = ["Tất cả", "OK", "CONSIDER", "REMOVE"]
+    unique_statuses = sorted({str(v).strip().upper() for v in df_raw.get(COL_STATUS, pd.Series()).dropna().unique() if v and str(v).strip().lower() != "nan"})
+    if not unique_statuses:
+        unique_statuses = ["OK", "CONSIDER", "REMOVE"]
+    status_opts = ["Tất cả"] + unique_statuses
     sel_status = st.selectbox("STATUS", status_opts, label_visibility="collapsed", key="dw_status")
 
     section_header("ID / Phân khúc")
@@ -199,7 +202,7 @@ if st.session_state.get("dw_show_add"):
     with st.expander("➕ Thêm bản ghi mới", expanded=True):
         with st.form("dw_add_form", clear_on_submit=True):
             fc1, fc2 = st.columns(2)
-            new_status  = fc1.selectbox("STATUS", ["OK", "CONSIDER", "REMOVE"])
+            new_status  = fc1.selectbox("STATUS", unique_statuses)
             new_id      = fc2.text_input("ID (Phân khúc)")
             new_ten     = fc1.text_input("Tên trường/công ty")
             new_nguoi   = fc2.text_input("Người phụ trách/đại diện")
@@ -289,7 +292,7 @@ if has_permission(role, "can_update") and not df.empty:
             st.info("Nhập dữ liệu mới rồi nhấn Lưu để cập nhật dòng đã chọn.")
             with st.form("dw_edit_form"):
                 ec1, ec2 = st.columns(2)
-                e_status = ec1.selectbox("STATUS", ["OK", "CONSIDER", "REMOVE"])
+                e_status = ec1.selectbox("STATUS", unique_statuses)
                 e_id     = ec2.text_input("ID")
                 e_ten    = ec1.text_input("Tên trường/công ty")
                 e_nguoi  = ec2.text_input("Người phụ trách/đại diện")
