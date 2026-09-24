@@ -93,13 +93,32 @@ with st.sidebar:
 
     # ── Filters ──────────────────────────────────────────────────────────────
     section_header("Trạng thái")
-    unique_statuses = sorted({str(v).strip().upper() for v in df_raw.get(COL_STATUS, pd.Series()).dropna().unique() if v and str(v).strip().lower() != "nan"})
+    unique_statuses = sorted({
+        str(v).strip().upper() for v in df_raw.get(COL_STATUS, pd.Series()).dropna().unique()
+        if v and str(v).strip().lower() != "nan" and str(v).strip().upper() not in ["INACTIVE", "CONSIDER"]
+    })
     if not unique_statuses:
-        unique_statuses = ["OK", "CONSIDER", "REMOVE"]
+        unique_statuses = ["OK", "REMOVE"]
     status_opts = ["Tất cả"] + unique_statuses
     sel_status = st.selectbox("STATUS", status_opts, label_visibility="collapsed", key="dw_status")
 
     section_header("ID / Phân khúc")
+    with st.expander("ℹ️ Ý nghĩa các mã ID", expanded=False):
+        st.markdown("""
+        - **EDVN**: doanh nghiệp Edtech tại Việt Nam
+        - **EDQT**: doanh nghiệp Edtech ở nước ngoài
+        - **FLC**: trung tâm đào tạo ngoại ngữ
+        - **SC**: trung tâm đào tạo kỹ năng
+        - **ASC**: hiệp hội, viện
+        - **PRS**: tạp chí, toà soạn (báo chí)
+        - **GOV**: các cơ quan thuộc chính phủ
+        - **OCP**: doanh nghiệp KHÔNG thuộc mảng Edtech
+        - **K12**: trường từ tiểu học đến THPT
+        - **HE**: trường cao đẳng, đại học
+        - **KD**: trường mầm non
+        - **AC**: đơn vị, trung tâm tư vấn (du học)
+        - **FU**: các quỹ, đơn vị đầu tư
+        """)
     id_opts = sorted({str(v).split('-')[0] for v in df_raw.get(COL_ID, pd.Series()).dropna().unique() if v and str(v) != "nan"})
     sel_ids = st.multiselect("ID", id_opts, placeholder="Tất cả", key="dw_id")
 
@@ -108,7 +127,7 @@ with st.sidebar:
     sel_nhom = st.multiselect("Nhóm", nhom_opts, placeholder="Tất cả", key="dw_nhom")
 
     section_header("Tỉnh/TP")
-    tinh_opts = ["Tất cả"] + sorted({v for v in df_raw.get(COL_TINH, pd.Series()).dropna().unique() if v and v != "nan"})
+    tinh_opts = ["Tất cả"] + sorted({v for v in df_raw.get(COL_TINH, pd.Series()).dropna().unique() if v and v != "nan" and str(v).strip() != "0"})
     sel_tinh = st.selectbox("Tỉnh/TP", tinh_opts, label_visibility="collapsed", key="dw_tinh")
 
     section_header("Tìm kiếm")
