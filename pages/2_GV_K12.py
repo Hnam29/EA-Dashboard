@@ -103,6 +103,7 @@ with st.sidebar:
 
     search_ten   = st.text_input("Tên giáo viên", placeholder="Nhập tên...", key="gv_ten")
     search_email = st.text_input("Email", placeholder="Nhập email...", key="gv_email")
+    only_with_email = st.checkbox("Chỉ hiển thị dòng có Email", key="gv_only_email")
 
     if st.button("🔄 Làm mới cache", use_container_width=True, key="gv_refresh"):
         load_data.clear()
@@ -121,6 +122,8 @@ if search_ten and COL_TEN in df.columns:
     df = df[df[COL_TEN].str.contains(search_ten, case=False, na=False)]
 if search_email and COL_EMAIL in df.columns:
     df = df[df[COL_EMAIL].str.contains(search_email, case=False, na=False)]
+if only_with_email and COL_EMAIL in df.columns:
+    df = df[(df[COL_EMAIL] != "") & (df[COL_EMAIL].str.lower() != "nan")]
 
 # ── Helper đếm non-empty ──────────────────────────────────────────────────────
 def _count_nonempty(d: pd.DataFrame, col: str) -> int:
