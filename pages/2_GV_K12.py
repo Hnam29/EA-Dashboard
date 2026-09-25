@@ -182,7 +182,10 @@ with btn_cols[1]:
                 key="gv_export_cols"
             )
             if cols_to_export:
-                df_export = df[cols_to_export]
+                df_export = df[cols_to_export].copy()
+                # Remove illegal characters for Excel
+                df_export = df_export.replace(r'[\x00-\x08\x0b-\x0c\x0e-\x1f]', '', regex=True)
+                
                 buf = io.BytesIO()
                 with pd.ExcelWriter(buf, engine='openpyxl') as writer:
                     df_export.to_excel(writer, index=False, sheet_name='Data')
