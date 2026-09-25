@@ -173,15 +173,27 @@ with btn_cols[0]:
         add_clicked = False
 with btn_cols[1]:
     if has_permission(role, "can_export") and not df.empty:
-        buf = io.StringIO()
-        df.to_csv(buf, index=False, encoding="utf-8-sig")
-        st.download_button(
-            "⬇️ Export",
-            data=buf.getvalue().encode("utf-8-sig"),
-            file_name=f"gv_k12_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
+        with st.popover("⬇️ Export Excel"):
+            st.markdown("**Chọn cột để export**")
+            cols_to_export = st.multiselect(
+                "Các cột",
+                options=df.columns.tolist(),
+                default=df.columns.tolist(),
+                key="gv_export_cols"
+            )
+            if cols_to_export:
+                df_export = df[cols_to_export]
+                buf = io.BytesIO()
+                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                    df_export.to_excel(writer, index=False, sheet_name='Data')
+                
+                st.download_button(
+                    "Tải xuống Excel",
+                    data=buf.getvalue(),
+                    file_name=f"gv_k12_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
 with btn_cols[2]:
     if has_permission(role, "can_export") and not df.empty:
         if st.button("📤 → GSheet", use_container_width=True, key="gv_gsheet_export"):

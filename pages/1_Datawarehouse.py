@@ -122,6 +122,11 @@ with st.sidebar:
     id_opts = sorted({str(v).split('-')[0] for v in df_raw.get(COL_ID, pd.Series()).dropna().unique() if v and str(v) != "nan"})
     sel_ids = st.multiselect("ID", id_opts, placeholder="Tất cả", key="dw_id")
 
+    sel_loai_truong = []
+    if "K12" in sel_ids:
+        loai_truong_opts = sorted({str(v) for v in df_raw.get(COL_LOAI_TRUONG, pd.Series()).dropna().unique() if v and str(v).lower() != "nan" and str(v).strip() != ""})
+        sel_loai_truong = st.multiselect("Loại trường (K12)", loai_truong_opts, placeholder="Tất cả", key="dw_loai_truong")
+
     section_header("Nhóm (Dự án)")
     nhom_opts = sorted({v for v in df_raw.get(COL_NHOM, pd.Series()).dropna().unique() if v and str(v) != "nan"})
     sel_nhom = st.multiselect("Nhóm", nhom_opts, placeholder="Tất cả", key="dw_nhom")
@@ -146,6 +151,8 @@ if sel_status != "Tất cả" and COL_STATUS in df.columns:
     df = df[df[COL_STATUS].str.upper() == sel_status]
 if sel_ids and COL_ID in df.columns:
     df = df[df[COL_ID].apply(lambda x: str(x).split('-')[0]).isin(sel_ids)]
+if sel_loai_truong and COL_LOAI_TRUONG in df.columns:
+    df = df[df[COL_LOAI_TRUONG].isin(sel_loai_truong)]
 if sel_nhom and COL_NHOM in df.columns:
     df = df[df[COL_NHOM].isin(sel_nhom)]
 if sel_tinh != "Tất cả" and COL_TINH in df.columns:
@@ -198,15 +205,27 @@ with btn_cols[0]:
 
 with btn_cols[1]:
     if has_permission(role, "can_export") and not df.empty:
-        buf = io.StringIO()
-        df.to_csv(buf, index=False, encoding="utf-8-sig")
-        st.download_button(
-            "⬇️ Export",
-            data=buf.getvalue().encode("utf-8-sig"),
-            file_name=f"datawarehouse_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
+        with st.popover("⬇️ Export Excel"):
+            st.markdown("**Chọn cột để export**")
+            cols_to_export = st.multiselect(
+                "Các cột",
+                options=df.columns.tolist(),
+                default=df.columns.tolist(),
+                key="dw_export_cols"
+            )
+            if cols_to_export:
+                df_export = df[cols_to_export]
+                buf = io.BytesIO()
+                with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                    df_export.to_excel(writer, index=False, sheet_name='Data')
+                
+                st.download_button(
+                    "Tải xuống Excel",
+                    data=buf.getvalue(),
+                    file_name=f"datawarehouse_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
 
 with btn_cols[2]:
     if has_permission(role, "can_export") and not df.empty:
