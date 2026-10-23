@@ -150,18 +150,140 @@ def export_df_to_new_sheet(df: pd.DataFrame, new_sheet_name: str) -> bool:
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
 
-def log_action(username: str, action: str, details: str) -> None:
-    """Ghi lại thao tác người dùng vào sheet audit_log (không hiện lỗi ra UI)."""
+def log_action(
+    username: str,
+    action: str,
+    details: str,
+    target_id: str = "",
+    old_value: str = "",
+) -> None:
+    """
+    Ghi lại thao tác người dùng vào sheet audit_log (không hiện lỗi ra UI).
+    
+    Args:
+        username:  Tên đăng nhập người thực hiện.
+        action:    Loại hành động (CREATE, UPDATE, DELETE, LOGIN, ...).
+        details:   Mô tả chi tiết (tên bản ghi, trường bị sửa, ...).
+        target_id: ID / định danh của bản ghi bị tác động (tùy chọn).
+        old_value: Giá trị cũ trước khi thay đổi (tùy chọn, để trống nếu không có).
+    """
     try:
         vn_tz = timezone(timedelta(hours=7))
-        append_row("audit_log", {
+        log_entry: Dict[str, Any] = {
             "timestamp": datetime.now(vn_tz).strftime("%Y-%m-%d %H:%M:%S"),
             "username":  username,
             "action":    action,
             "details":   details,
-        })
+        }
+        # Chỉ ghi thêm các trường nếu sheet audit_log có cột tương ứng
+        if target_id:
+            log_entry["target_id"] = target_id
+        if old_value:
+            log_entry["old_value"] = old_value
+        append_row("audit_log", log_entry)
     except Exception:
         pass  # Không để lỗi audit làm hỏng luồng chính
+
+
+# ── Editor Lock (chống xung đột chỉnh sửa đồng thời) ─────────────────────────
+
+_LOCK_SHEET = "editor_lock"
+_LOCK_TIMEOUT_MINUTES = 15  # Lock tự giải phóng sau 15 phút không hoạt động
+
+
+def acquire_editor_lock(username: str) -> bool:
+    """
+    Thử giành quyền chỉnh sửa độc quyền.
+    
+    Trả về True nếu lock được cấp cho username (hoặc username đã đang giữ lock).
+    Trả về False nếu có editor khác đang giữ lock và chưa timeout.
+    
+    Cơ chế: đọc sheet 'editor_lock' (1 dòng dữ liệu), kiểm tra timeout.
+    """
+    try:
+        ws = _get_worksheet(_LOCK_SHEET)
+        rows = ws.get_all_records(expected_headers=[])
+        vn_tz = timezone(timedelta(hours=7))
+        now = datetime.now(vn_tz)
+
+        if rows:
+            lock = rows[0]
+            locked_by = str(lock.get("locked_by", "")).strip()
+            lock_time_str = str(lock.get("lock_time", "")).strip()
+
+            if locked_by and locked_by != username:
+                # Kiểm tra timeout
+                try:
+                    lock_time = datetime.strptime(lock_time_str, "%Y-%m-%d %H:%M:%S")
+                    lock_time = lock_time.replace(tzinfo=vn_tz)
+                    elapsed = (now - lock_time).total_seconds() / 60
+                    if elapsed < _LOCK_TIMEOUT_MINUTES:
+                        return False  # Đang bị editor khác lock
+                except Exception:
+                    pass  # Parse lỗi → coi như hết hạn, cho phép tiếp tục
+
+        # Ghi hoặc cập nhật lock
+        lock_data = {
+            "locked_by": username,
+            "lock_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        # Xóa các dòng cũ rồi ghi mới
+        existing = ws.get_all_values()
+        if len(existing) > 1:
+            ws.delete_rows(2, len(existing))
+        ws.append_row(
+            [lock_data["locked_by"], lock_data["lock_time"]],
+            value_input_option="USER_ENTERED",
+        )
+        return True
+    except gspread.WorksheetNotFound:
+        # Sheet chưa tồn tại → coi như không có lock
+        return True
+    except Exception:
+        return True  # Nếu lỗi kết nối → không block user
+
+
+def release_editor_lock(username: str) -> None:
+    """Giải phóng lock nếu username đang giữ."""
+    try:
+        ws = _get_worksheet(_LOCK_SHEET)
+        rows = ws.get_all_records(expected_headers=[])
+        if rows and str(rows[0].get("locked_by", "")).strip() == username:
+            existing = ws.get_all_values()
+            if len(existing) > 1:
+                ws.delete_rows(2, len(existing))
+    except Exception:
+        pass
+
+
+def get_editor_lock_info() -> Dict[str, str]:
+    """
+    Đọc thông tin lock hiện tại.
+    Trả về dict {"locked_by": str, "lock_time": str} hoặc {} nếu không có lock / lock hết hạn.
+    """
+    try:
+        ws = _get_worksheet(_LOCK_SHEET)
+        rows = ws.get_all_records(expected_headers=[])
+        if not rows:
+            return {}
+        lock = rows[0]
+        locked_by = str(lock.get("locked_by", "")).strip()
+        lock_time_str = str(lock.get("lock_time", "")).strip()
+        if not locked_by:
+            return {}
+        # Kiểm tra timeout
+        try:
+            vn_tz = timezone(timedelta(hours=7))
+            lock_time = datetime.strptime(lock_time_str, "%Y-%m-%d %H:%M:%S")
+            lock_time = lock_time.replace(tzinfo=vn_tz)
+            elapsed = (datetime.now(vn_tz) - lock_time).total_seconds() / 60
+            if elapsed >= _LOCK_TIMEOUT_MINUTES:
+                return {}
+        except Exception:
+            return {}
+        return {"locked_by": locked_by, "lock_time": lock_time_str}
+    except Exception:
+        return {}
 
 
 # ── User Management ───────────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ PERMISSIONS: Dict[Role, Dict[str, bool]] = {
         "can_view":           True,
         "can_create":         True,
         "can_update":         True,
-        "can_delete":         False,
+        "can_delete":         True,   # Editor được phép xóa dữ liệu
         "can_manage_users":   False,
         "can_export":         True,
         "can_view_audit_log": False,

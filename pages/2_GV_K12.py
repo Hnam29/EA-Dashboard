@@ -14,6 +14,7 @@ from auth.roles   import has_permission, get_role_label, get_role_color
 from services.gsheet import (
     read_sheet_as_df, append_row, update_row_by_index,
     delete_row_by_index, export_df_to_new_sheet, log_action,
+    acquire_editor_lock, release_editor_lock, get_editor_lock_info,
 )
 from components.ui import (
     inject_css, render_page_header, render_user_card, section_header,
@@ -267,39 +268,114 @@ else:
 if has_permission(role, "can_update") and not df.empty:
     st.divider()
     section_header("✏️ Chỉnh sửa / Xóa bản ghi")
-    with st.expander("Chỉnh sửa hoặc xóa (nhập số dòng thực tế trong Google Sheet)", expanded=False):
-        row_num = st.number_input("Số dòng (từ 2)", min_value=2, step=1, value=2, key="gv_edit_row")
-        action  = st.radio("Thao tác", ["Chỉnh sửa", "Xóa"], horizontal=True, key="gv_action")
 
-        if action == "Xóa":
-            if has_permission(role, "can_delete"):
-                st.warning(f"⚠️ Xác nhận xóa dòng **{row_num}**?")
-                if st.button("🗑️ Xác nhận xóa", type="primary", key="gv_del_btn"):
-                    if delete_row_by_index(SHEET_NAME, int(row_num)):
-                        log_action(uname, "DELETE", f"Xóa dòng {row_num} trong {SHEET_NAME}")
-                        st.success(f"✅ Đã xóa dòng {row_num}")
-                        load_data.clear()
-                        st.rerun()
-            else:
-                st.error("Bạn không có quyền xóa.")
+    # ── Kiểm tra Editor Lock ──────────────────────────────────────────────────
+    lock_info = get_editor_lock_info()
+    editor_blocked = False
+
+    if lock_info and lock_info.get("locked_by") != uname:
+        locked_by_name = lock_info["locked_by"]
+        lock_time_disp = lock_info["lock_time"]
+        st.warning(
+            f"🔒 **{locked_by_name}** đang chỉnh sửa dữ liệu (từ {lock_time_disp}). "
+            f"Bạn chỉ có thể xem – vui lòng chờ hoặc thử lại sau."
+        )
+        editor_blocked = True
+    elif not lock_info or lock_info.get("locked_by") == uname:
+        if st.session_state.get("gv_editing"):
+            acquire_editor_lock(uname)
         else:
-            with st.form("gv_edit_form"):
-                ec1, ec2 = st.columns(2)
-                e_so    = ec1.text_input("Sở GD")
-                e_id    = ec2.text_input("ID")
-                e_ten   = ec1.text_input("Tên")
-                e_email = ec2.text_input("Email")
-                e_sdt   = ec1.text_input("SĐT")
-                e_truong= ec2.text_input("Trường")
-                e_phong = ec1.text_input("Phòng GD")
-                if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
-                    edit_data = {
-                        COL_SO_GD: e_so, COL_ID: e_id, COL_TEN: e_ten,
-                        COL_EMAIL: e_email, COL_SDT: e_sdt,
-                        COL_TRUONG: e_truong, COL_PHONG_GD: e_phong,
-                    }
-                    if update_row_by_index(SHEET_NAME, int(row_num), edit_data):
-                        log_action(uname, "UPDATE", f"Cập nhật dòng {row_num}: {e_ten}")
-                        st.success(f"✅ Đã cập nhật dòng {row_num}")
-                        load_data.clear()
+            col_lock, col_rel = st.columns([4, 1])
+            with col_lock:
+                st.info("🟢 Không có ai đang chỉnh sửa. Nhấn **Bắt đầu chỉnh sửa** để khoá phiên.")
+            with col_rel:
+                if st.button("✏️ Bắt đầu chỉnh sửa", use_container_width=True, key="gv_start_edit"):
+                    if acquire_editor_lock(uname):
+                        st.session_state["gv_editing"] = True
+                        log_action(uname, "EDIT_SESSION_START",
+                                   f"Bắt đầu phiên chỉnh sửa GV-K12")
                         st.rerun()
+
+    if st.session_state.get("gv_editing") and not editor_blocked:
+        if st.button("🔓 Kết thúc phiên chỉnh sửa", key="gv_end_edit"):
+            release_editor_lock(uname)
+            st.session_state.pop("gv_editing", None)
+            log_action(uname, "EDIT_SESSION_END",
+                       f"Kết thúc phiên chỉnh sửa GV-K12")
+            st.rerun()
+
+    if not editor_blocked and st.session_state.get("gv_editing"):
+        with st.expander("Chỉnh sửa hoặc xóa (nhập số dòng thực tế trong Google Sheet)", expanded=True):
+            row_num = st.number_input("Số dòng (từ 2)", min_value=2, step=1, value=2, key="gv_edit_row")
+
+            # Hiển thị dữ liệu dòng hiện tại
+            sheet_idx = int(row_num) - 2
+            if 0 <= sheet_idx < len(df_raw):
+                current_row = df_raw.iloc[sheet_idx]
+                with st.expander("👁 Xem dữ liệu hiện tại của dòng này", expanded=False):
+                    st.dataframe(current_row.to_frame().T, use_container_width=True, hide_index=True)
+
+            action  = st.radio("Thao tác", ["Chỉnh sửa", "Xóa"], horizontal=True, key="gv_action")
+
+            if action == "Xóa":
+                if has_permission(role, "can_delete"):
+                    del_name  = ""
+                    del_truong = ""
+                    del_email  = ""
+                    if 0 <= (int(row_num) - 2) < len(df_raw):
+                        del_row   = df_raw.iloc[int(row_num) - 2]
+                        del_name  = str(del_row.get(COL_TEN, ""))
+                        del_truong= str(del_row.get(COL_TRUONG, ""))
+                        del_email = str(del_row.get(COL_EMAIL, ""))
+                    st.warning(
+                        f"⚠️ Xác nhận xóa dòng **{row_num}** khỏi sheet `{SHEET_NAME}`?  \n"
+                        f"Tên GV: **{del_name}** | Trường: {del_truong} | Email: {del_email}"
+                    )
+                    if st.button("🗑️ Xác nhận xóa", type="primary", key="gv_del_btn"):
+                        if delete_row_by_index(SHEET_NAME, int(row_num)):
+                            log_action(
+                                uname, "DELETE",
+                                f"Xóa dòng {row_num} | Sheet: {SHEET_NAME} | "
+                                f"Tên GV: {del_name} | Trường: {del_truong} | Email: {del_email}",
+                                target_id=del_name,
+                                old_value=f"Tên={del_name}; Trường={del_truong}; Email={del_email}",
+                            )
+                            st.success(f"✅ Đã xóa dòng {row_num} ({del_name})")
+                            load_data.clear()
+                            st.rerun()
+                else:
+                    st.error("Bạn không có quyền xóa.")
+            else:
+                prefill: dict = {}
+                if 0 <= (int(row_num) - 2) < len(df_raw):
+                    prefill = df_raw.iloc[int(row_num) - 2].to_dict()
+
+                with st.form("gv_edit_form"):
+                    ec1, ec2 = st.columns(2)
+                    e_so    = ec1.text_input("Sở GD",    value=str(prefill.get(COL_SO_GD, "")))
+                    e_id    = ec2.text_input("ID",        value=str(prefill.get(COL_ID, "")))
+                    e_ten   = ec1.text_input("Tên",       value=str(prefill.get(COL_TEN, "")))
+                    e_email = ec2.text_input("Email",     value=str(prefill.get(COL_EMAIL, "")))
+                    e_sdt   = ec1.text_input("SĐT",       value=str(prefill.get(COL_SDT, "")))
+                    e_truong= ec2.text_input("Trường",    value=str(prefill.get(COL_TRUONG, "")))
+                    e_phong = ec1.text_input("Phòng GD",  value=str(prefill.get(COL_PHONG_GD, "")))
+                    if st.form_submit_button("💾 Lưu thay đổi", type="primary"):
+                        old_ten   = str(prefill.get(COL_TEN, ""))
+                        old_email = str(prefill.get(COL_EMAIL, ""))
+                        edit_data = {
+                            COL_SO_GD: e_so, COL_ID: e_id, COL_TEN: e_ten,
+                            COL_EMAIL: e_email, COL_SDT: e_sdt,
+                            COL_TRUONG: e_truong, COL_PHONG_GD: e_phong,
+                        }
+                        if update_row_by_index(SHEET_NAME, int(row_num), edit_data):
+                            log_action(
+                                uname, "UPDATE",
+                                f"Cập nhật dòng {row_num} | Sheet: {SHEET_NAME} | "
+                                f"Tên mới: {e_ten} | Trường: {e_truong} | Email mới: {e_email}",
+                                target_id=e_id,
+                                old_value=f"Tên={old_ten}; Email={old_email}",
+                            )
+                            st.success(f"✅ Đã cập nhật dòng {row_num} ({e_ten})")
+                            load_data.clear()
+                            st.rerun()
+

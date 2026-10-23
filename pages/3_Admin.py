@@ -246,16 +246,22 @@ with tab_log:
         if "timestamp" in df_log.columns:
             df_log = df_log.sort_values("timestamp", ascending=False)
 
+        col_cfg = {
+            "timestamp": st.column_config.TextColumn("Thời gian", width="medium"),
+            "username":  st.column_config.TextColumn("Người dùng", width="small"),
+            "action":    st.column_config.TextColumn("Hành động", width="small"),
+            "details":   st.column_config.TextColumn("Chi tiết", width="large"),
+        }
+        if "target_id" in df_log.columns:
+            col_cfg["target_id"] = st.column_config.TextColumn("ID bản ghi", width="small")
+        if "old_value" in df_log.columns:
+            col_cfg["old_value"] = st.column_config.TextColumn("Giá trị cũ", width="medium")
+
         st.dataframe(
             df_log,
             use_container_width=True,
             hide_index=True,
             height=550,
-            column_config={
-                "timestamp": st.column_config.TextColumn("Thời gian", width="medium"),
-                "username":  st.column_config.TextColumn("Người dùng", width="small"),
-                "action":    st.column_config.TextColumn("Hành động", width="small"),
-                "details":   st.column_config.TextColumn("Chi tiết", width="large"),
-            },
+            column_config=col_cfg,
         )
         st.caption(f"Tổng: {len(df_log):,} bản ghi")
