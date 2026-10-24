@@ -186,118 +186,95 @@ def log_action(
 
 
 # ── Editor Lock (chống xung đột chỉnh sửa đồng thời) ─────────────────────────
+#
+# Dùng @st.cache_resource để lưu lock state dưới dạng in-memory singleton
+# được chia sẻ TRỰC TIẾP qua tất cả Streamlit sessions trong cùng process.
+# Đây là cơ chế đáng tin cậy hơn Google Sheets vì:
+#   - Không có API call có thể fail silently
+#   - Thay đổi dict được reflect ngay lập tức với tất cả sessions
+#   - Không có caching/delay
+# ─────────────────────────────────────────────────────────────────────────────
 
-_LOCK_SHEET = "editor_lock"
 _LOCK_TIMEOUT_MINUTES = 15  # Lock tự giải phóng sau 15 phút không hoạt động
 
 
-def _get_or_create_lock_sheet() -> gspread.Worksheet:
-    """Lấy sheet editor_lock, tự tạo nếu chưa có (với header locked_by | lock_time)."""
-    sp = _get_spreadsheet()
+@st.cache_resource
+def _editor_lock_state() -> dict:
+    """
+    Singleton dict chia sẻ qua tất cả sessions.
+    Trả về mutable dict – thay đổi trực tiếp trên object này sẽ thấy ngay ở session khác.
+    Schema: {"locked_by": str, "lock_time": str (ISO format)}
+    """
+    return {"locked_by": "", "lock_time": ""}
+
+
+def _vn_now_str() -> str:
+    """Trả về timestamp hiện tại (giờ VN) dạng chuỗi."""
+    vn_tz = timezone(timedelta(hours=7))
+    return datetime.now(vn_tz).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _lock_is_expired(lock_time_str: str) -> bool:
+    """Kiểm tra lock có hết hạn chưa (quá _LOCK_TIMEOUT_MINUTES)."""
     try:
-        return sp.worksheet(_LOCK_SHEET)
-    except gspread.WorksheetNotFound:
-        ws = sp.add_worksheet(title=_LOCK_SHEET, rows=5, cols=2)
-        ws.update("A1:B1", [["locked_by", "lock_time"]])
-        return ws
-
-
-def _read_lock_raw() -> Optional[Dict[str, str]]:
-    """
-    Đọc raw values từ sheet editor_lock.
-    Trả về {"locked_by": str, "lock_time": str} hoặc None nếu không có dữ liệu.
-    Dùng get_all_values() thay vì get_all_records() để tránh lỗi khi sheet chỉ có header.
-    """
-    ws = _get_or_create_lock_sheet()
-    rows = ws.get_all_values()
-    # rows[0] = header ["locked_by", "lock_time"]
-    # rows[1] = dữ liệu (nếu có)
-    if len(rows) < 2:
-        return None
-    data_row = rows[1]
-    if len(data_row) < 2:
-        return None
-    locked_by = str(data_row[0]).strip()
-    lock_time = str(data_row[1]).strip()
-    if not locked_by:
-        return None
-    return {"locked_by": locked_by, "lock_time": lock_time}
+        vn_tz = timezone(timedelta(hours=7))
+        lock_time = datetime.strptime(lock_time_str, "%Y-%m-%d %H:%M:%S")
+        lock_time = lock_time.replace(tzinfo=vn_tz)
+        elapsed = (datetime.now(vn_tz) - lock_time).total_seconds() / 60
+        return elapsed >= _LOCK_TIMEOUT_MINUTES
+    except Exception:
+        return True  # Parse lỗi → coi như hết hạn
 
 
 def acquire_editor_lock(username: str) -> bool:
     """
     Thử giành quyền chỉnh sửa độc quyền.
 
-    Trả về True nếu lock được cấp cho username (hoặc username đã đang giữ lock).
-    Trả về False nếu có editor khác đang giữ lock và chưa timeout.
+    Trả về True nếu lock được cấp (hoặc username đã đang giữ lock).
+    Trả về False nếu có editor khác đang giữ lock và chưa hết 15 phút.
     """
-    try:
-        vn_tz = timezone(timedelta(hours=7))
-        now = datetime.now(vn_tz)
+    state = _editor_lock_state()
+    locked_by = state.get("locked_by", "")
+    lock_time  = state.get("lock_time", "")
 
-        lock = _read_lock_raw()
-        if lock:
-            locked_by = lock["locked_by"]
-            if locked_by and locked_by != username:
-                # Kiểm tra timeout
-                try:
-                    lock_time = datetime.strptime(lock["lock_time"], "%Y-%m-%d %H:%M:%S")
-                    lock_time = lock_time.replace(tzinfo=vn_tz)
-                    elapsed = (now - lock_time).total_seconds() / 60
-                    if elapsed < _LOCK_TIMEOUT_MINUTES:
-                        return False  # Đang bị editor khác lock, chưa timeout
-                except Exception:
-                    pass  # Parse lỗi → coi như hết hạn, tiếp tục
+    if locked_by and locked_by != username:
+        # Có người khác đang giữ lock – kiểm tra timeout
+        if not _lock_is_expired(lock_time):
+            return False  # Bị chặn
 
-        # Ghi hoặc cập nhật lock (dùng update cell trực tiếp để tránh race condition)
-        ws = _get_or_create_lock_sheet()
-        new_time = now.strftime("%Y-%m-%d %H:%M:%S")
-        all_vals = ws.get_all_values()
-        if len(all_vals) >= 2:
-            # Đã có dòng dữ liệu → update tại chỗ
-            ws.update("A2:B2", [[username, new_time]])
-        else:
-            # Chưa có dòng dữ liệu → append
-            ws.append_row([username, new_time], value_input_option="USER_ENTERED")
-        return True
-    except Exception:
-        return True  # Nếu lỗi kết nối → không block user
+    # Cấp lock (ghi trực tiếp vào shared dict)
+    state["locked_by"] = username
+    state["lock_time"]  = _vn_now_str()
+    return True
 
 
 def release_editor_lock(username: str) -> None:
-    """Giải phóng lock nếu username đang giữ (xóa nội dung dòng dữ liệu)."""
-    try:
-        lock = _read_lock_raw()
-        if lock and lock["locked_by"] == username:
-            ws = _get_or_create_lock_sheet()
-            # Xóa nội dung dòng 2 (để trống, giữ header)
-            ws.update("A2:B2", [["", ""]])
-    except Exception:
-        pass
+    """Giải phóng lock nếu username đang giữ."""
+    state = _editor_lock_state()
+    if state.get("locked_by") == username:
+        state["locked_by"] = ""
+        state["lock_time"]  = ""
 
 
 def get_editor_lock_info() -> Dict[str, str]:
     """
-    Đọc thông tin lock hiện tại.
-    Trả về dict {"locked_by": str, "lock_time": str} hoặc {} nếu không có lock / lock hết hạn.
+    Đọc trạng thái lock hiện tại.
+    Trả về {"locked_by": str, "lock_time": str} hoặc {} nếu không có lock / đã hết hạn.
     """
-    try:
-        lock = _read_lock_raw()
-        if not lock:
-            return {}
-        # Kiểm tra timeout
-        try:
-            vn_tz = timezone(timedelta(hours=7))
-            lock_time = datetime.strptime(lock["lock_time"], "%Y-%m-%d %H:%M:%S")
-            lock_time = lock_time.replace(tzinfo=vn_tz)
-            elapsed = (datetime.now(vn_tz) - lock_time).total_seconds() / 60
-            if elapsed >= _LOCK_TIMEOUT_MINUTES:
-                return {}
-        except Exception:
-            return {}
-        return lock
-    except Exception:
+    state = _editor_lock_state()
+    locked_by = state.get("locked_by", "")
+    lock_time  = state.get("lock_time", "")
+
+    if not locked_by:
         return {}
+
+    if _lock_is_expired(lock_time):
+        # Tự động giải phóng lock hết hạn
+        state["locked_by"] = ""
+        state["lock_time"]  = ""
+        return {}
+
+    return {"locked_by": locked_by, "lock_time": lock_time}
 
 
 # ── User Management ───────────────────────────────────────────────────────────
