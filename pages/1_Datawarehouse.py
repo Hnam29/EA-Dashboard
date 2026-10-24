@@ -80,6 +80,12 @@ def load_data() -> pd.DataFrame:
 
 
 df_raw = load_data()
+# Tính số dòng thực tế trên Google Sheet:
+# header_row=2 → 2 dòng header → dữ liệu bắt đầu từ sheet row 3
+# df_raw.iloc[i] tương ứng với sheet row = i + 3
+if not df_raw.empty:
+    df_raw.insert(0, "Sheet Row #", range(3, 3 + len(df_raw)))
+
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -293,6 +299,12 @@ if df.empty:
 else:
     # Column config cho dataframe
     col_cfg = {}
+    if "Sheet Row #" in df.columns:
+        col_cfg["Sheet Row #"] = st.column_config.NumberColumn(
+            "Sheet Row #",
+            help="Số dòng thực tế trên Google Sheet – dùng số này để chỉnh sửa/xóa",
+            width="small",
+        )
     if COL_EMAIL in df.columns:
         col_cfg[COL_EMAIL] = st.column_config.TextColumn("Email", width="medium")
     if COL_WEBSITE in df.columns:
@@ -302,6 +314,7 @@ else:
     if COL_STATUS in df.columns:
         col_cfg[COL_STATUS] = st.column_config.TextColumn("Status", width="small")
 
+    st.caption("💡 Cột **Sheet Row #** là số dòng thực tế trên Google Sheet – dùng để chỉnh sửa/xóa bên dưới.")
     st.dataframe(
         df,
         use_container_width=True,
@@ -357,14 +370,15 @@ if has_permission(role, "can_update") and not df.empty:
     if not editor_blocked and st.session_state.get("dw_editing"):
         with st.expander("Chỉnh sửa hoặc xóa bản ghi (nhập số thứ tự dòng trong Google Sheet)", expanded=True):
             row_num = st.number_input(
-                "Số thứ tự dòng trong Sheet (bắt đầu từ 2, dòng 1 là tiêu đề)",
-                min_value=2, step=1, value=2, key="dw_edit_row",
+                "Số dòng trên Google Sheet (dòng 1-2 là header, dữ liệu bắt đầu từ dòng 3)",
+                min_value=3, step=1, value=3, key="dw_edit_row",
             )
 
             # Hiển thị dữ liệu dòng hiện tại để tham chiếu
-            sheet_idx = int(row_num) - 2  # convert sheet row → df index (header=row1, data starts row2)
-            if 0 <= sheet_idx < len(df_raw):
-                current_row = df_raw.iloc[sheet_idx]
+            # header_row=2 → df_raw.iloc[i] = sheet row i+3 → ngược lại: iloc_idx = row_num - 3
+            sheet_iloc_idx = int(row_num) - 3
+            if 0 <= sheet_iloc_idx < len(df_raw):
+                current_row = df_raw.iloc[sheet_iloc_idx]
                 with st.expander("👁 Xem dữ liệu hiện tại của dòng này", expanded=False):
                     st.dataframe(current_row.to_frame().T, use_container_width=True, hide_index=True)
 
@@ -376,8 +390,9 @@ if has_permission(role, "can_update") and not df.empty:
                     del_name = ""
                     del_id   = ""
                     del_email = ""
-                    if 0 <= (int(row_num) - 2) < len(df_raw):
-                        del_row  = df_raw.iloc[int(row_num) - 2]
+                    iloc_idx = int(row_num) - 3
+                    if 0 <= iloc_idx < len(df_raw):
+                        del_row  = df_raw.iloc[iloc_idx]
                         del_name = str(del_row.get(COL_TEN, ""))
                         del_id   = str(del_row.get(COL_ID, ""))
                         del_email= str(del_row.get(COL_EMAIL, ""))
@@ -402,8 +417,9 @@ if has_permission(role, "can_update") and not df.empty:
             else:
                 # Prefill với dữ liệu hiện tại nếu có
                 prefill: dict = {}
-                if 0 <= (int(row_num) - 2) < len(df_raw):
-                    prefill = df_raw.iloc[int(row_num) - 2].to_dict()
+                iloc_idx = int(row_num) - 3
+                if 0 <= iloc_idx < len(df_raw):
+                    prefill = df_raw.iloc[iloc_idx].to_dict()
 
                 st.info("Nhập dữ liệu mới rồi nhấn Lưu để cập nhật dòng đã chọn.")
                 with st.form("dw_edit_form"):

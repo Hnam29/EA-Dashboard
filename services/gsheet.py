@@ -191,67 +191,87 @@ _LOCK_SHEET = "editor_lock"
 _LOCK_TIMEOUT_MINUTES = 15  # Lock tự giải phóng sau 15 phút không hoạt động
 
 
+def _get_or_create_lock_sheet() -> gspread.Worksheet:
+    """Lấy sheet editor_lock, tự tạo nếu chưa có (với header locked_by | lock_time)."""
+    sp = _get_spreadsheet()
+    try:
+        return sp.worksheet(_LOCK_SHEET)
+    except gspread.WorksheetNotFound:
+        ws = sp.add_worksheet(title=_LOCK_SHEET, rows=5, cols=2)
+        ws.update("A1:B1", [["locked_by", "lock_time"]])
+        return ws
+
+
+def _read_lock_raw() -> Optional[Dict[str, str]]:
+    """
+    Đọc raw values từ sheet editor_lock.
+    Trả về {"locked_by": str, "lock_time": str} hoặc None nếu không có dữ liệu.
+    Dùng get_all_values() thay vì get_all_records() để tránh lỗi khi sheet chỉ có header.
+    """
+    ws = _get_or_create_lock_sheet()
+    rows = ws.get_all_values()
+    # rows[0] = header ["locked_by", "lock_time"]
+    # rows[1] = dữ liệu (nếu có)
+    if len(rows) < 2:
+        return None
+    data_row = rows[1]
+    if len(data_row) < 2:
+        return None
+    locked_by = str(data_row[0]).strip()
+    lock_time = str(data_row[1]).strip()
+    if not locked_by:
+        return None
+    return {"locked_by": locked_by, "lock_time": lock_time}
+
+
 def acquire_editor_lock(username: str) -> bool:
     """
     Thử giành quyền chỉnh sửa độc quyền.
-    
+
     Trả về True nếu lock được cấp cho username (hoặc username đã đang giữ lock).
     Trả về False nếu có editor khác đang giữ lock và chưa timeout.
-    
-    Cơ chế: đọc sheet 'editor_lock' (1 dòng dữ liệu), kiểm tra timeout.
     """
     try:
-        ws = _get_worksheet(_LOCK_SHEET)
-        rows = ws.get_all_records(expected_headers=[])
         vn_tz = timezone(timedelta(hours=7))
         now = datetime.now(vn_tz)
 
-        if rows:
-            lock = rows[0]
-            locked_by = str(lock.get("locked_by", "")).strip()
-            lock_time_str = str(lock.get("lock_time", "")).strip()
-
+        lock = _read_lock_raw()
+        if lock:
+            locked_by = lock["locked_by"]
             if locked_by and locked_by != username:
                 # Kiểm tra timeout
                 try:
-                    lock_time = datetime.strptime(lock_time_str, "%Y-%m-%d %H:%M:%S")
+                    lock_time = datetime.strptime(lock["lock_time"], "%Y-%m-%d %H:%M:%S")
                     lock_time = lock_time.replace(tzinfo=vn_tz)
                     elapsed = (now - lock_time).total_seconds() / 60
                     if elapsed < _LOCK_TIMEOUT_MINUTES:
-                        return False  # Đang bị editor khác lock
+                        return False  # Đang bị editor khác lock, chưa timeout
                 except Exception:
-                    pass  # Parse lỗi → coi như hết hạn, cho phép tiếp tục
+                    pass  # Parse lỗi → coi như hết hạn, tiếp tục
 
-        # Ghi hoặc cập nhật lock
-        lock_data = {
-            "locked_by": username,
-            "lock_time": now.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        # Xóa các dòng cũ rồi ghi mới
-        existing = ws.get_all_values()
-        if len(existing) > 1:
-            ws.delete_rows(2, len(existing))
-        ws.append_row(
-            [lock_data["locked_by"], lock_data["lock_time"]],
-            value_input_option="USER_ENTERED",
-        )
-        return True
-    except gspread.WorksheetNotFound:
-        # Sheet chưa tồn tại → coi như không có lock
+        # Ghi hoặc cập nhật lock (dùng update cell trực tiếp để tránh race condition)
+        ws = _get_or_create_lock_sheet()
+        new_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        all_vals = ws.get_all_values()
+        if len(all_vals) >= 2:
+            # Đã có dòng dữ liệu → update tại chỗ
+            ws.update("A2:B2", [[username, new_time]])
+        else:
+            # Chưa có dòng dữ liệu → append
+            ws.append_row([username, new_time], value_input_option="USER_ENTERED")
         return True
     except Exception:
         return True  # Nếu lỗi kết nối → không block user
 
 
 def release_editor_lock(username: str) -> None:
-    """Giải phóng lock nếu username đang giữ."""
+    """Giải phóng lock nếu username đang giữ (xóa nội dung dòng dữ liệu)."""
     try:
-        ws = _get_worksheet(_LOCK_SHEET)
-        rows = ws.get_all_records(expected_headers=[])
-        if rows and str(rows[0].get("locked_by", "")).strip() == username:
-            existing = ws.get_all_values()
-            if len(existing) > 1:
-                ws.delete_rows(2, len(existing))
+        lock = _read_lock_raw()
+        if lock and lock["locked_by"] == username:
+            ws = _get_or_create_lock_sheet()
+            # Xóa nội dung dòng 2 (để trống, giữ header)
+            ws.update("A2:B2", [["", ""]])
     except Exception:
         pass
 
@@ -262,26 +282,20 @@ def get_editor_lock_info() -> Dict[str, str]:
     Trả về dict {"locked_by": str, "lock_time": str} hoặc {} nếu không có lock / lock hết hạn.
     """
     try:
-        ws = _get_worksheet(_LOCK_SHEET)
-        rows = ws.get_all_records(expected_headers=[])
-        if not rows:
-            return {}
-        lock = rows[0]
-        locked_by = str(lock.get("locked_by", "")).strip()
-        lock_time_str = str(lock.get("lock_time", "")).strip()
-        if not locked_by:
+        lock = _read_lock_raw()
+        if not lock:
             return {}
         # Kiểm tra timeout
         try:
             vn_tz = timezone(timedelta(hours=7))
-            lock_time = datetime.strptime(lock_time_str, "%Y-%m-%d %H:%M:%S")
+            lock_time = datetime.strptime(lock["lock_time"], "%Y-%m-%d %H:%M:%S")
             lock_time = lock_time.replace(tzinfo=vn_tz)
             elapsed = (datetime.now(vn_tz) - lock_time).total_seconds() / 60
             if elapsed >= _LOCK_TIMEOUT_MINUTES:
                 return {}
         except Exception:
             return {}
-        return {"locked_by": locked_by, "lock_time": lock_time_str}
+        return lock
     except Exception:
         return {}
 

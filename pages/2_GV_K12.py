@@ -61,6 +61,12 @@ def load_data() -> pd.DataFrame:
 
 
 df_raw = load_data()
+# Tính số dòng thực tế trên Google Sheet:
+# header_row=1 → 1 dòng header → dữ liệu bắt đầu từ sheet row 2
+# df_raw.iloc[i] tương ứng với sheet row = i + 2
+if not df_raw.empty:
+    df_raw.insert(0, "Sheet Row #", range(2, 2 + len(df_raw)))
+
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -243,23 +249,27 @@ if st.session_state.get("gv_show_add"):
 if df.empty:
     st.info("Không tìm thấy dữ liệu phù hợp.")
 else:
-    # Thêm cột Index hiển thị
-    df_display = df.reset_index(drop=True)
-    df_display.index = df_display.index + 1
-
     col_cfg = {}
-    if COL_EMAIL in df_display.columns:
+    if "Sheet Row #" in df.columns:
+        col_cfg["Sheet Row #"] = st.column_config.NumberColumn(
+            "Sheet Row #",
+            help="Số dòng thực tế trên Google Sheet – dùng số này để chỉnh sửa/xóa",
+            width="small",
+        )
+    if COL_EMAIL in df.columns:
         col_cfg[COL_EMAIL] = st.column_config.TextColumn("Email", width="medium")
-    if COL_SDT in df_display.columns:
+    if COL_SDT in df.columns:
         col_cfg[COL_SDT] = st.column_config.TextColumn("SĐT", width="small")
-    if COL_SO_GD in df_display.columns:
+    if COL_SO_GD in df.columns:
         col_cfg[COL_SO_GD] = st.column_config.TextColumn("Sở GD", width="large")
-    if COL_PHONG_GD in df_display.columns:
+    if COL_PHONG_GD in df.columns:
         col_cfg[COL_PHONG_GD] = st.column_config.TextColumn("Phòng GD", width="large")
 
+    st.caption("💡 Cột **Sheet Row #** là số dòng thực tế trên Google Sheet – dùng để chỉnh sửa/xóa bên dưới.")
     st.dataframe(
-        df_display,
+        df,
         use_container_width=True,
+        hide_index=True,
         height=600,
         column_config=col_cfg,
     )
@@ -306,12 +316,16 @@ if has_permission(role, "can_update") and not df.empty:
 
     if not editor_blocked and st.session_state.get("gv_editing"):
         with st.expander("Chỉnh sửa hoặc xóa (nhập số dòng thực tế trong Google Sheet)", expanded=True):
-            row_num = st.number_input("Số dòng (từ 2)", min_value=2, step=1, value=2, key="gv_edit_row")
+            row_num = st.number_input(
+                "Số dòng trên Google Sheet (xem cột **Sheet Row #** trong bảng để biết số chính xác)",
+                min_value=2, step=1, value=2, key="gv_edit_row"
+            )
 
             # Hiển thị dữ liệu dòng hiện tại
-            sheet_idx = int(row_num) - 2
-            if 0 <= sheet_idx < len(df_raw):
-                current_row = df_raw.iloc[sheet_idx]
+            # header_row=1 → df_raw.iloc[i] = sheet row i+2 → iloc_idx = row_num - 2
+            sheet_iloc_idx = int(row_num) - 2
+            if 0 <= sheet_iloc_idx < len(df_raw):
+                current_row = df_raw.iloc[sheet_iloc_idx]
                 with st.expander("👁 Xem dữ liệu hiện tại của dòng này", expanded=False):
                     st.dataframe(current_row.to_frame().T, use_container_width=True, hide_index=True)
 
@@ -322,8 +336,9 @@ if has_permission(role, "can_update") and not df.empty:
                     del_name  = ""
                     del_truong = ""
                     del_email  = ""
-                    if 0 <= (int(row_num) - 2) < len(df_raw):
-                        del_row   = df_raw.iloc[int(row_num) - 2]
+                    iloc_idx = int(row_num) - 2
+                    if 0 <= iloc_idx < len(df_raw):
+                        del_row   = df_raw.iloc[iloc_idx]
                         del_name  = str(del_row.get(COL_TEN, ""))
                         del_truong= str(del_row.get(COL_TRUONG, ""))
                         del_email = str(del_row.get(COL_EMAIL, ""))
@@ -347,8 +362,9 @@ if has_permission(role, "can_update") and not df.empty:
                     st.error("Bạn không có quyền xóa.")
             else:
                 prefill: dict = {}
-                if 0 <= (int(row_num) - 2) < len(df_raw):
-                    prefill = df_raw.iloc[int(row_num) - 2].to_dict()
+                iloc_idx = int(row_num) - 2
+                if 0 <= iloc_idx < len(df_raw):
+                    prefill = df_raw.iloc[iloc_idx].to_dict()
 
                 with st.form("gv_edit_form"):
                     ec1, ec2 = st.columns(2)
