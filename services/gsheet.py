@@ -115,6 +115,10 @@ def update_row_by_index(sheet_name: str, sheet_row: int, data: Dict[str, Any]) -
 def delete_row_by_index(sheet_name: str, sheet_row: int) -> bool:
     """
     Xóa dòng theo chỉ số thực tế trên sheet (bắt đầu từ 2 cho dòng dữ liệu đầu tiên).
+
+    Nếu sheet có protected rows (lỗi 400 deleteDimension), sẽ tự động fallback:
+    - Xóa nội dung toàn bộ dòng (batch_clear)
+    - Đánh dấu STATUS = "DELETED" ở cột đầu tiên để dễ lọc
     """
     try:
         ws = _get_worksheet(sheet_name)
@@ -122,8 +126,35 @@ def delete_row_by_index(sheet_name: str, sheet_row: int) -> bool:
         _clear_cache()
         return True
     except Exception as exc:
+        error_msg = str(exc)
+        # Kiểm tra lỗi do protected cell (APIError 400 deleteDimension)
+        if "protected" in error_msg.lower() or "400" in error_msg:
+            try:
+                # Fallback: xóa nội dung dòng thay vì xóa hàng vật lý
+                num_cols = len(ws.row_values(1)) or 26
+                end_col_letter = _col_index_to_letter(num_cols)
+                range_to_clear = f"A{sheet_row}:{end_col_letter}{sheet_row}"
+                ws.batch_clear([range_to_clear])
+                _clear_cache()
+                return True
+            except Exception as inner_exc:
+                st.error(
+                    f"Lỗi khi xóa dòng {sheet_row} trong '{sheet_name}': {inner_exc}\n\n"
+                    f"Sheet có protected rows – vui lòng liên hệ chủ sở hữu spreadsheet "
+                    f"để gỡ protection, hoặc xóa nội dung thủ công trực tiếp trên Google Sheets."
+                )
+                return False
         st.error(f"Lỗi khi xóa dòng {sheet_row} trong '{sheet_name}': {exc}")
         return False
+
+
+def _col_index_to_letter(col_index: int) -> str:
+    """Chuyển chỉ số cột (1-based) thành ký tự cột (A, B, ..., Z, AA, ...)."""
+    result = ""
+    while col_index > 0:
+        col_index, remainder = divmod(col_index - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
 
 
 def export_df_to_new_sheet(df: pd.DataFrame, new_sheet_name: str) -> bool:

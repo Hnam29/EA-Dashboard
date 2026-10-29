@@ -146,6 +146,7 @@ with st.sidebar:
     search_ten   = st.text_input("Tên trường/công ty", placeholder="Nhập tên...", key="dw_ten")
     search_email = st.text_input("Email", placeholder="Nhập email...", key="dw_email")
     only_with_email = st.checkbox("Chỉ hiển thị dòng có Email", key="dw_only_email")
+    only_with_sdt   = st.checkbox("Chỉ hiển thị dòng có SĐT",   key="dw_only_sdt")
 
     if st.button("🔄 Làm mới cache", use_container_width=True, key="dw_refresh"):
         load_data.clear()
@@ -170,6 +171,11 @@ if search_email and COL_EMAIL in df.columns:
     df = df[df[COL_EMAIL].str.contains(search_email, case=False, na=False)]
 if only_with_email and COL_EMAIL in df.columns:
     df = df[(df[COL_EMAIL] != "") & (df[COL_EMAIL].str.lower() != "nan")]
+if only_with_sdt and COL_SDT in df.columns:
+    df = df[
+        df[COL_SDT].astype(str).str.strip().ne("") &
+        df[COL_SDT].astype(str).str.lower().ne("nan")
+    ]
 
 # ── Header ────────────────────────────────────────────────────────────────────
 render_page_header("DATAWAREHOUSE", "Tổng hợp dữ liệu khách hàng EdTech Agency")
