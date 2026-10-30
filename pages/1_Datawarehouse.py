@@ -390,18 +390,23 @@ if has_permission(role, "can_update") and not df.empty:
 
             action = st.radio("Thao tác", ["Chỉnh sửa", "Xóa"], horizontal=True, key="dw_action")
 
+            # ── Hiển thị thông báo xóa thành công (sau rerun) ──────────────────
+            if st.session_state.get("dw_delete_success_msg"):
+                msg = st.session_state.pop("dw_delete_success_msg")
+                st.success(msg)
+
             if action == "Xóa":
                 if has_permission(role, "can_delete"):
                     # Lấy thông tin dòng sắp xóa để log
-                    del_name = ""
-                    del_id   = ""
+                    del_name  = ""
+                    del_id    = ""
                     del_email = ""
-                    iloc_idx = int(row_num) - 3
+                    iloc_idx  = int(row_num) - 3
                     if 0 <= iloc_idx < len(df_raw):
-                        del_row  = df_raw.iloc[iloc_idx]
-                        del_name = str(del_row.get(COL_TEN, ""))
-                        del_id   = str(del_row.get(COL_ID, ""))
-                        del_email= str(del_row.get(COL_EMAIL, ""))
+                        del_row   = df_raw.iloc[iloc_idx]
+                        del_name  = str(del_row.get(COL_TEN, ""))
+                        del_id    = str(del_row.get(COL_ID, ""))
+                        del_email = str(del_row.get(COL_EMAIL, ""))
                     st.warning(
                         f"⚠️ Xác nhận xóa dòng **{row_num}** khỏi sheet `{SHEET_NAME}`?  \n"
                         f"Tên: **{del_name}** | ID: {del_id} | Email: {del_email}"
@@ -415,7 +420,14 @@ if has_permission(role, "can_update") and not df.empty:
                                 target_id=del_id,
                                 old_value=f"Tên={del_name}; Email={del_email}",
                             )
-                            st.success(f"✅ Đã xóa dòng {row_num} ({del_name})")
+                            # Lưu thông báo để hiển thị sau rerun
+                            st.session_state["dw_delete_success_msg"] = (
+                                f"✅ Đã xóa dòng {row_num} | Tên: **{del_name}** | ID: {del_id} | Email: {del_email}"
+                            )
+                            # Reset về Chỉnh sửa để tránh hiện warning xóa cho dòng mới
+                            st.session_state["dw_action"] = "Chỉnh sửa"
+                            # Reset về dòng đầu tiên có dữ liệu
+                            st.session_state["dw_edit_row"] = 3
                             load_data.clear()
                             st.rerun()
                 else:

@@ -116,13 +116,25 @@ def delete_row_by_index(sheet_name: str, sheet_row: int) -> bool:
     """
     Xóa dòng theo chỉ số thực tế trên sheet (bắt đầu từ 2 cho dòng dữ liệu đầu tiên).
 
-    Nếu sheet có protected rows (lỗi 400 deleteDimension), sẽ tự động fallback:
-    - Xóa nội dung toàn bộ dòng (batch_clear)
-    - Đánh dấu STATUS = "DELETED" ở cột đầu tiên để dễ lọc
+    Sử dụng batchUpdate API trực tiếp để xóa nhanh hơn (tương đương deleteDimension).
+    Fallback: xóa nội dung dòng nếu có protected rows.
     """
     try:
-        ws = _get_worksheet(sheet_name)
-        ws.delete_rows(sheet_row)
+        sp = _get_spreadsheet()
+        ws = sp.worksheet(sheet_name)
+        # dùng batchUpdate deleteDimension – 1 request duy nhất, nhanh hơn ws.delete_rows()
+        sp.batch_update({
+            "requests": [{
+                "deleteDimension": {
+                    "range": {
+                        "sheetId":    ws.id,
+                        "dimension":  "ROWS",
+                        "startIndex": sheet_row - 1,   # 0-indexed
+                        "endIndex":   sheet_row,        # exclusive
+                    }
+                }
+            }]
+        })
         _clear_cache()
         return True
     except Exception as exc:
@@ -130,6 +142,7 @@ def delete_row_by_index(sheet_name: str, sheet_row: int) -> bool:
         # Kiểm tra lỗi do protected cell (APIError 400 deleteDimension)
         if "protected" in error_msg.lower() or "400" in error_msg:
             try:
+                ws = _get_worksheet(sheet_name)
                 # Fallback: xóa nội dung dòng thay vì xóa hàng vật lý
                 num_cols = len(ws.row_values(1)) or 26
                 end_col_letter = _col_index_to_letter(num_cols)
