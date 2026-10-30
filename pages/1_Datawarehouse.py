@@ -375,6 +375,12 @@ if has_permission(role, "can_update") and not df.empty:
 
     if not editor_blocked and st.session_state.get("dw_editing"):
         with st.expander("Chỉnh sửa hoặc xóa bản ghi (nhập số thứ tự dòng trong Google Sheet)", expanded=True):
+            # ── Áp dụng reset sau khi xóa (PHẢI làm TRƯỚC khi render widget) ──
+            if st.session_state.pop("dw_reset_row", False):
+                st.session_state["dw_edit_row"] = 3
+            if st.session_state.pop("dw_reset_action", False):
+                st.session_state["dw_action"] = "Chỉnh sửa"
+
             row_num = st.number_input(
                 "Số dòng trên Google Sheet (dòng 1-2 là header, dữ liệu bắt đầu từ dòng 3)",
                 min_value=3, step=1, value=3, key="dw_edit_row",
@@ -424,10 +430,10 @@ if has_permission(role, "can_update") and not df.empty:
                             st.session_state["dw_delete_success_msg"] = (
                                 f"✅ Đã xóa dòng {row_num} | Tên: **{del_name}** | ID: {del_id} | Email: {del_email}"
                             )
-                            # Reset về Chỉnh sửa để tránh hiện warning xóa cho dòng mới
-                            st.session_state["dw_action"] = "Chỉnh sửa"
-                            # Reset về dòng đầu tiên có dữ liệu
-                            st.session_state["dw_edit_row"] = 3
+                            # Dùng flag trung gian – KHÔNG set widget key trực tiếp
+                            # (tránh StreamlitWidgetAlreadyInstantiatedError)
+                            st.session_state["dw_reset_action"] = True
+                            st.session_state["dw_reset_row"]   = True
                             load_data.clear()
                             st.rerun()
                 else:
