@@ -27,15 +27,17 @@ def _get_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
+@st.cache_resource(show_spinner=False)
 def _get_spreadsheet() -> gspread.Spreadsheet:
-    """Mở spreadsheet chính theo ID trong secrets."""
+    """Mở và cache spreadsheet chính (chỉ gọi open_by_key 1 lần)."""
     client = _get_client()
     spreadsheet_id = st.secrets["google_sheets"]["spreadsheet_id"]
     return client.open_by_key(spreadsheet_id)
 
 
+@st.cache_resource(show_spinner=False)
 def _get_worksheet(sheet_name: str) -> gspread.Worksheet:
-    """Lấy worksheet theo tên."""
+    """Cache worksheet theo tên – tránh gọi lại API mỗi lần."""
     return _get_spreadsheet().worksheet(sheet_name)
 
 
