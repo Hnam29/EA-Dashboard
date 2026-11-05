@@ -7,6 +7,7 @@ Cột Google Sheet: STATUS, ID, Tên trường/công ty, Người phụ trách/�
 """
 
 import io
+import unicodedata
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -62,6 +63,38 @@ ALL_COLUMNS = [
     COL_EMAIL, COL_EMAIL_STATUS, COL_SDT, COL_WEBSITE, COL_DIACHI,
     COL_LOAI_HINH, COL_LOAI_TRUONG, COL_KHOI, COL_QUAN, COL_TINH,
 ]
+
+# ── Cấp học K12 ───────────────────────────────────────────────────────────────
+CAP_HOC_PATTERNS = {
+    "Tiểu học": r"tiểu học|\bth\b|cấp 1",
+    "THCS":     r"thcs|trung học cơ sở|cấp 2",
+    "THPT":     r"thpt|trung học phổ thông|cấp 3",
+}
+def _norm(s: str) -> str:
+    return unicodedata.normalize("NFC", str(s)).strip().lower()
+
+
+def match_cap_hoc(d: pd.DataFrame, levels: list) -> pd.Series:
+    """
+    True nếu dòng thuộc ít nhất một cấp học được chọn.
+    - Ưu tiên cột 'Khối' (vd: "thcs, thpt" khớp cả THCS và THPT).
+    - Nếu 'Khối' để trống thì dò theo tên trường làm phương án dự phòng.
+    """
+    if COL_KHOI not in d.columns:
+        return pd.Series(True, index=d.index)
+
+    khoi = d[COL_KHOI].fillna("").astype(str).map(_norm).replace("nan", "")
+    if COL_TEN in d.columns:
+        ten = d[COL_TEN].fillna("").astype(str).map(_norm)
+    else:
+        ten = pd.Series("", index=d.index)
+    text = khoi.where(khoi != "", ten)
+
+    mask = pd.Series(False, index=d.index)
+    for lv in levels:
+        mask |= text.str.contains(CAP_HOC_PATTERNS[lv], regex=True, na=False)
+    return mask
+
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 
@@ -133,6 +166,13 @@ with st.sidebar:
         loai_truong_opts = sorted({str(v) for v in df_raw.get(COL_LOAI_TRUONG, pd.Series()).dropna().unique() if v and str(v).lower() != "nan" and str(v).strip() != ""})
         sel_loai_truong = st.multiselect("Loại trường (K12)", loai_truong_opts, placeholder="Tất cả", key="dw_loai_truong")
 
+    sel_cap_hoc = []
+    if "K12" in sel_ids:
+        sel_cap_hoc = st.multiselect(
+            "Cấp học (K12)", list(CAP_HOC_PATTERNS),
+            placeholder="Tất cả", key="dw_cap_hoc",
+        )
+
     section_header("Nhóm (Dự án)")
     nhom_opts = sorted({v for v in df_raw.get(COL_NHOM, pd.Series()).dropna().unique() if v and str(v) != "nan"})
     sel_nhom = st.multiselect("Nhóm", nhom_opts, placeholder="Tất cả", key="dw_nhom")
@@ -160,6 +200,9 @@ if sel_ids and COL_ID in df.columns:
     df = df[df[COL_ID].apply(lambda x: str(x).split('-')[0]).isin(sel_ids)]
 if sel_loai_truong and COL_LOAI_TRUONG in df.columns:
     df = df[df[COL_LOAI_TRUONG].isin(sel_loai_truong)]
+if sel_cap_hoc and COL_ID in df.columns:
+    is_k12 = df[COL_ID].astype(str).str.split("-").str[0] == "K12"
+    df = df[~is_k12 | match_cap_hoc(df, sel_cap_hoc)]
 if sel_nhom and COL_NHOM in df.columns:
     df = df[df[COL_NHOM].isin(sel_nhom)]
 if sel_tinh != "Tất cả" and COL_TINH in df.columns:
