@@ -44,57 +44,56 @@ def _get_worksheet(sheet_name: str) -> gspread.Worksheet:
 # ── Đọc dữ liệu (có cache) ───────────────────────────────────────────────────
 
 @st.cache_data(ttl=300, show_spinner=False)
+def _read_sheet_cached(sheet_name: str, header_row: int = 1) -> pd.DataFrame:
+    """Đọc sheet. Để exception nổi lên → lỗi KHÔNG bị cache."""
+    ws = _get_worksheet(sheet_name)
+    all_values = ws.get_all_values()
+
+    if not all_values:
+        return pd.DataFrame()
+
+    header_idx = header_row - 1
+    if header_idx >= len(all_values):
+        return pd.DataFrame()
+
+    headers = all_values[header_idx]
+    data_rows = all_values[header_idx + 1:]
+
+    n_cols = len(headers)
+    padded = [row + [""] * (n_cols - len(row)) if len(row) < n_cols
+              else row[:n_cols]
+              for row in data_rows]
+
+    df = pd.DataFrame(padded, columns=headers)
+    df.columns = [str(c).strip() for c in df.columns]
+
+    for col in df.columns:
+        if col.startswith("STATUS"):
+            df.rename(columns={col: "STATUS"}, inplace=True)
+            break
+
+    df = df[df.apply(lambda r: r.str.strip().ne("").any(), axis=1)].reset_index(drop=True)
+    return df
+
+
 def read_sheet_as_df(sheet_name: str, header_row: int = 1) -> pd.DataFrame:
-    """
-    Đọc toàn bộ sheet thành DataFrame. Cached 5 phút.
-    header_row: dòng tiêu đề (mặc định 1, dùng 2 cho sheet có 2 dòng header).
-
-    Dùng get_all_values() thay vì get_all_records() để chỉ thực hiện 1 API call
-    duy nhất, không có per-cell type inference → nhanh hơn 3-5x với sheet lớn.
-    """
+    """Wrapper: hiển thị lỗi rõ ràng, không cache kết quả lỗi."""
     try:
-        ws = _get_worksheet(sheet_name)
-        # 1 API call – trả về list[list[str]], raw, không format
-        all_values = ws.get_all_values()
-
-        if not all_values:
-            return pd.DataFrame()
-
-        # header_row là 1-indexed → lấy dòng header và dữ liệu
-        header_idx = header_row - 1
-        if header_idx >= len(all_values):
-            return pd.DataFrame()
-
-        headers  = all_values[header_idx]
-        data_rows = all_values[header_idx + 1:]
-
-        # Chuẩn hóa độ dài mỗi dòng (pad nếu thiếu cột)
-        n_cols = len(headers)
-        padded = [row + [""] * (n_cols - len(row)) if len(row) < n_cols
-                  else row[:n_cols]
-                  for row in data_rows]
-
-        df = pd.DataFrame(padded, columns=headers)
-
-        # Chuẩn hóa tên cột: bỏ khoảng trắng thừa
-        df.columns = [str(c).strip() for c in df.columns]
-
-        # Cột STATUS có thể có tên dài nhiều dòng – rút gọn về 'STATUS'
-        for col in df.columns:
-            if col.startswith("STATUS"):
-                df.rename(columns={col: "STATUS"}, inplace=True)
-                break
-
-        # Bỏ các dòng hoàn toàn trống
-        df = df[df.apply(lambda r: r.str.strip().ne("").any(), axis=1)].reset_index(drop=True)
-
-        return df
+        return _read_sheet_cached(sheet_name, header_row)
+    except gspread.SpreadsheetNotFound:
+        st.error(
+            "Không mở được Spreadsheet. Kiểm tra `spreadsheet_id` trong secrets "
+            "và đảm bảo đã Share file cho email Service Account (quyền Editor)."
+        )
     except gspread.WorksheetNotFound:
         st.warning(f"Sheet '{sheet_name}' không tồn tại trong Spreadsheet.")
-        return pd.DataFrame()
     except Exception as exc:
-        st.error(f"Lỗi khi đọc sheet '{sheet_name}': {exc}")
-        return pd.DataFrame()
+        st.error(f"Lỗi khi đọc sheet '{sheet_name}': {type(exc).__name__}: {exc!r}")
+    return pd.DataFrame()
+
+
+# Giữ tương thích với chỗ khác gọi read_sheet_as_df.clear()
+read_sheet_as_df.clear = _read_sheet_cached.clear
 
 
 def _clear_cache():
