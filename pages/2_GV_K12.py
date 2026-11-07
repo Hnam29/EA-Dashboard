@@ -7,6 +7,7 @@ Cột Google Sheet: Sở GD, ID, Tên, Email, SĐT, Trường, Phòng GD
 import io
 import re
 import unicodedata
+from rapidfuzz import fuzz, process
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -49,9 +50,14 @@ COL_TRUONG   = "Trường"
 COL_PHONG_GD = "Phòng GD"
 
 ALL_COLUMNS = [COL_SO_GD, COL_ID, COL_TEN, COL_EMAIL, COL_SDT, COL_TRUONG, COL_PHONG_GD]
+# ── Loại trường & Cấp học (K12) – tra từ sheet Datawarehouse ─────────────────
 COL_KHOI        = "Khối"
 COL_LOAI_TRUONG = "Loại trường"
 DW_SHEET_NAME   = "All_Businesses2"
+DW_COL_TEN      = "Tên trường/công ty"
+DW_COL_TINH     = "Tỉnh/TP"
+MATCH_THRESHOLD = 90   # độ giống tối thiểu (%) khi ghép tên trường
+
 CAP_HOC_PATTERNS = {
     "Tiểu học": r"tiểu học|\bth\b|cấp 1",
     "THCS":     r"thcs|trung học cơ sở|cấp 2",
@@ -61,39 +67,59 @@ CAP_HOC_PATTERNS = {
 def _norm(s) -> str:
     return unicodedata.normalize("NFC", str(s)).strip().lower()
 
+def _clean(v) -> str:
+    v = str(v).strip()
+    return "" if v.lower() == "nan" else v
+
+def _strip_accents(s: str) -> str:
+    s = unicodedata.normalize("NFD", s.replace("đ", "d"))
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
 def _school_key(s) -> str:
-    """Chuẩn hóa tên trường để so khớp giữa 2 sheet."""
-    k = _norm(s)
-    k = re.sub(r"^trường\s+", "", k)
+    """Chuẩn hóa tên trường: thường hóa, bỏ 'Trường', thống nhất viết tắt, bỏ ký tự đặc biệt."""
+    k = re.sub(r"^trường\s+", "", _norm(s))
     k = (k.replace("trung học cơ sở", "thcs")
           .replace("trung học phổ thông", "thpt")
           .replace("tiểu học", "th"))
-    return re.sub(r"\s+", " ", k).strip()
+    return re.sub(r"[^\w]+", " ", k).strip()
 
 def _prov_key(s) -> str:
-    """'Sở Giáo dục và Đào tạo Tỉnh Hưng Yên' / 'Tỉnh Hưng Yên' -> 'hưng yên'."""
-    k = _norm(s)
-    k = re.sub(r"^sở giáo dục và đào tạo\s*", "", k)
-    k = re.sub(r"^(tỉnh|thành phố|tp\.?)\s*", "", k)
+    """'Sở Giáo dục và Đào tạo Tỉnh Hưng Yên' / 'Hưng Yên' -> 'hung yen'."""
+    k = _strip_accents(_norm(s))
+    k = re.sub(r"^so giao duc va dao tao\s*", "", k)
+    k = re.sub(r"^(tinh|thanh pho|tp\.?)\s+", "", k)
     return re.sub(r"\s+", " ", k).strip()
 
-def _loai_truong_lookup():
-    """Trả về (tra theo (tên, tỉnh), tra theo tên nếu tên đó chỉ có 1 loại trường)."""
+def _cap_sig(key: str) -> frozenset:
+    """Tập cấp học nhận diện được từ tên trường – dùng để không ghép nhầm THCS với THPT."""
+    return frozenset(lv for lv, pat in CAP_HOC_PATTERNS.items() if re.search(pat, key))
+
+def _build_lookup() -> dict:
+    """{(tỉnh, cấp): ({tên chuẩn hóa: [loại trường, khối]}, [danh sách tên])} từ các dòng K12."""
     dw = read_sheet_as_df(DW_SHEET_NAME, header_row=2)
-    need = {"ID", "Tên trường/công ty", COL_LOAI_TRUONG, "Tỉnh/TP"}
+    need = {"ID", DW_COL_TEN, DW_COL_TINH, COL_LOAI_TRUONG}
     if dw.empty or not need.issubset(dw.columns):
-        return {}, {}
-    dw = dw[dw["ID"].astype(str).str.split("-").str[0] == "K12"]
-    by_prov, by_name = {}, {}
-    for ten, tinh, lt in zip(dw["Tên trường/công ty"], dw["Tỉnh/TP"], dw[COL_LOAI_TRUONG]):
-        lt = str(lt).strip()
-        if not lt or lt.lower() == "nan":
+        return {}
+    dw = dw[dw["ID"].astype(str).str.split("-").str[0].str.strip().str.upper() == "K12"]
+    khoi = dw[COL_KHOI] if COL_KHOI in dw.columns else pd.Series("", index=dw.index)
+    groups: dict = {}
+    for ten, tinh, lt, kh in zip(dw[DW_COL_TEN], dw[DW_COL_TINH], dw[COL_LOAI_TRUONG], khoi):
+        key = _school_key(ten)
+        if not key:
             continue
-        nk = _school_key(ten)
-        by_prov.setdefault((nk, _prov_key(tinh)), lt)
-        by_name.setdefault(nk, set()).add(lt)
-    by_name = {k: next(iter(v)) for k, v in by_name.items() if len(v) == 1}
-    return by_prov, by_name
+        cur = groups.setdefault((_prov_key(tinh), _cap_sig(key)), {}).setdefault(key, ["", ""])
+        cur[0] = cur[0] or _clean(lt)   # 1 trường có nhiều dòng → lấy giá trị không trống đầu tiên
+        cur[1] = cur[1] or _clean(kh)
+    return {k: (d, list(d)) for k, d in groups.items()}
+
+def _match_school(truong, so_gd, groups) -> tuple:
+    key = _school_key(truong)
+    grp = groups.get((_prov_key(so_gd), _cap_sig(key)))
+    if not key or not grp:
+        return ("", "")
+    d, choices = grp
+    hit = process.extractOne(key, choices, scorer=fuzz.ratio, score_cutoff=MATCH_THRESHOLD)
+    return tuple(d[hit[0]]) if hit else ("", "")
 
 def match_cap_hoc(d: pd.DataFrame, levels: list) -> pd.Series:
     """True nếu dòng thuộc ít nhất một cấp học được chọn (ưu tiên cột Khối, fallback tên trường)."""
@@ -118,16 +144,15 @@ def load_data() -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
 
-    # Tạo cột "Loại trường" bằng cách tra từ sheet Datawarehouse
-    if not df.empty and COL_LOAI_TRUONG not in df.columns and COL_TRUONG in df.columns:
-        by_prov, by_name = _loai_truong_lookup()
-
-        def _lookup(r):
-            nk = _school_key(r.get(COL_TRUONG, ""))
-            return by_prov.get((nk, _prov_key(r.get(COL_SO_GD, ""))), by_name.get(nk, ""))
-
-        df[COL_LOAI_TRUONG] = df.apply(_lookup, axis=1)
-
+    # Tra Loại trường + Khối từ Datawarehouse (khớp tên ≥ 90%, cùng tỉnh, cùng cấp)
+    if not df.empty and COL_TRUONG in df.columns and COL_SO_GD in df.columns:
+        groups = _build_lookup()
+        pairs = df[[COL_TRUONG, COL_SO_GD]].drop_duplicates()
+        res = {(t, s): _match_school(t, s, groups)
+               for t, s in zip(pairs[COL_TRUONG], pairs[COL_SO_GD])}
+        matched = [res[(t, s)] for t, s in zip(df[COL_TRUONG], df[COL_SO_GD])]
+        df[COL_LOAI_TRUONG] = [m[0] for m in matched]
+        df[COL_KHOI]        = [m[1] for m in matched]
     return df
 
 
@@ -157,6 +182,8 @@ with st.sidebar:
                                      placeholder="Tất cả", key="gv_loai_truong")
     sel_cap_hoc = st.multiselect("Cấp học (K12)", list(CAP_HOC_PATTERNS),
                                  placeholder="Tất cả", key="gv_cap_hoc")
+    if COL_LOAI_TRUONG in df_raw.columns and not df_raw.empty:
+        st.caption(f"Tra được Loại trường: {(df_raw[COL_LOAI_TRUONG] != '').mean():.0%} số dòng")
 
     # ── Filter: Sở GD ────────────────────────────────────────────────────────
     section_header("Filter theo Sở Giáo Dục")
