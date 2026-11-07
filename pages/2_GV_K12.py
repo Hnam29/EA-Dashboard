@@ -5,6 +5,8 @@ Cột Google Sheet: Sở GD, ID, Tên, Email, SĐT, Trường, Phòng GD
 """
 
 import io
+import re
+import unicodedata
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -47,6 +49,65 @@ COL_TRUONG   = "Trường"
 COL_PHONG_GD = "Phòng GD"
 
 ALL_COLUMNS = [COL_SO_GD, COL_ID, COL_TEN, COL_EMAIL, COL_SDT, COL_TRUONG, COL_PHONG_GD]
+COL_KHOI        = "Khối"
+COL_LOAI_TRUONG = "Loại trường"
+DW_SHEET_NAME   = "All_Businesses2"
+CAP_HOC_PATTERNS = {
+    "Tiểu học": r"tiểu học|\bth\b|cấp 1",
+    "THCS":     r"thcs|trung học cơ sở|cấp 2",
+    "THPT":     r"thpt|trung học phổ thông|cấp 3",
+}
+
+def _norm(s) -> str:
+    return unicodedata.normalize("NFC", str(s)).strip().lower()
+
+def _school_key(s) -> str:
+    """Chuẩn hóa tên trường để so khớp giữa 2 sheet."""
+    k = _norm(s)
+    k = re.sub(r"^trường\s+", "", k)
+    k = (k.replace("trung học cơ sở", "thcs")
+          .replace("trung học phổ thông", "thpt")
+          .replace("tiểu học", "th"))
+    return re.sub(r"\s+", " ", k).strip()
+
+def _prov_key(s) -> str:
+    """'Sở Giáo dục và Đào tạo Tỉnh Hưng Yên' / 'Tỉnh Hưng Yên' -> 'hưng yên'."""
+    k = _norm(s)
+    k = re.sub(r"^sở giáo dục và đào tạo\s*", "", k)
+    k = re.sub(r"^(tỉnh|thành phố|tp\.?)\s*", "", k)
+    return re.sub(r"\s+", " ", k).strip()
+
+def _loai_truong_lookup():
+    """Trả về (tra theo (tên, tỉnh), tra theo tên nếu tên đó chỉ có 1 loại trường)."""
+    dw = read_sheet_as_df(DW_SHEET_NAME, header_row=2)
+    need = {"ID", "Tên trường/công ty", COL_LOAI_TRUONG, "Tỉnh/TP"}
+    if dw.empty or not need.issubset(dw.columns):
+        return {}, {}
+    dw = dw[dw["ID"].astype(str).str.split("-").str[0] == "K12"]
+    by_prov, by_name = {}, {}
+    for ten, tinh, lt in zip(dw["Tên trường/công ty"], dw["Tỉnh/TP"], dw[COL_LOAI_TRUONG]):
+        lt = str(lt).strip()
+        if not lt or lt.lower() == "nan":
+            continue
+        nk = _school_key(ten)
+        by_prov.setdefault((nk, _prov_key(tinh)), lt)
+        by_name.setdefault(nk, set()).add(lt)
+    by_name = {k: next(iter(v)) for k, v in by_name.items() if len(v) == 1}
+    return by_prov, by_name
+
+def match_cap_hoc(d: pd.DataFrame, levels: list) -> pd.Series:
+    """True nếu dòng thuộc ít nhất một cấp học được chọn (ưu tiên cột Khối, fallback tên trường)."""
+    ten = (d[COL_TRUONG].fillna("").astype(str).map(_norm)
+           if COL_TRUONG in d.columns else pd.Series("", index=d.index))
+    if COL_KHOI in d.columns:
+        khoi = d[COL_KHOI].fillna("").astype(str).map(_norm).replace("nan", "")
+        text = khoi.where(khoi != "", ten)
+    else:
+        text = ten
+    mask = pd.Series(False, index=d.index)
+    for lv in levels:
+        mask |= text.str.contains(CAP_HOC_PATTERNS[lv], regex=True, na=False)
+    return mask
 
 # ── Load data ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +117,17 @@ def load_data() -> pd.DataFrame:
     for c in [COL_SO_GD, COL_TEN, COL_EMAIL, COL_SDT, COL_TRUONG, COL_PHONG_GD]:
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
+
+    # Tạo cột "Loại trường" bằng cách tra từ sheet Datawarehouse
+    if not df.empty and COL_LOAI_TRUONG not in df.columns and COL_TRUONG in df.columns:
+        by_prov, by_name = _loai_truong_lookup()
+
+        def _lookup(r):
+            nk = _school_key(r.get(COL_TRUONG, ""))
+            return by_prov.get((nk, _prov_key(r.get(COL_SO_GD, ""))), by_name.get(nk, ""))
+
+        df[COL_LOAI_TRUONG] = df.apply(_lookup, axis=1)
+
     return df
 
 
@@ -77,6 +149,14 @@ with st.sidebar:
     if st.button("🚪 Đăng xuất", use_container_width=True, key="gv_logout"):
         logout(); st.rerun()
     st.divider()
+
+    section_header("Loại trường / Cấp học (K12)")
+    loai_truong_opts = sorted({str(v) for v in df_raw.get(COL_LOAI_TRUONG, pd.Series()).dropna().unique()
+                               if v and str(v).lower() != "nan" and str(v).strip() != ""})
+    sel_loai_truong = st.multiselect("Loại trường (K12)", loai_truong_opts,
+                                     placeholder="Tất cả", key="gv_loai_truong")
+    sel_cap_hoc = st.multiselect("Cấp học (K12)", list(CAP_HOC_PATTERNS),
+                                 placeholder="Tất cả", key="gv_cap_hoc")
 
     # ── Filter: Sở GD ────────────────────────────────────────────────────────
     section_header("Filter theo Sở Giáo Dục")
@@ -121,7 +201,10 @@ if sel_so_gd and COL_SO_GD in df.columns:
 if sel_phong != "Tất cả" and COL_PHONG_GD in df.columns:
     df = df[df[COL_PHONG_GD] == sel_phong]
 if sel_truong != "Tất cả" and COL_TRUONG in df.columns:
-    df = df[df[COL_TRUONG] == sel_truong]
+    if sel_loai_truong and COL_LOAI_TRUONG in df.columns:
+        df = df[df[COL_LOAI_TRUONG].isin(sel_loai_truong)]
+    if sel_cap_hoc:
+        df = df[match_cap_hoc(df, sel_cap_hoc)]
 if search_ten and COL_TEN in df.columns:
     df = df[df[COL_TEN].str.contains(search_ten, case=False, na=False)]
 if search_email and COL_EMAIL in df.columns:
