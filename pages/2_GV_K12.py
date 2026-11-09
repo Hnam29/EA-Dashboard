@@ -269,10 +269,10 @@ flt_email = _count_nonempty(df, COL_EMAIL)
 flt_sdt   = _count_nonempty(df, COL_SDT)
 
 metrics_row([
-    ("Sở GD",    flt_so,    "🏛️", f"/ {all_so:,} toàn bộ"),
-    ("Phòng GD", flt_phong, "🏫", f"/ {all_phong:,} toàn bộ"),
-    ("Email",    flt_email, "📧", f"/ {all_email:,} toàn bộ"),
-    ("SĐT",      flt_sdt,   "📱", f"/ {all_sdt:,} toàn bộ"),
+    ("Tổng số Sở GD",    flt_so,    "🏛️", f"/ {all_so:,} toàn bộ"),
+    ("Tổng số Phòng GD", flt_phong, "🏫", f"/ {all_phong:,} toàn bộ"),
+    ("Tổng Email",       flt_email, "📧", f"/ {all_email:,} toàn bộ"),
+    ("Tổng SĐT",         flt_sdt,   "📱", f"/ {all_sdt:,} toàn bộ"),
 ])
 
 st.markdown("<br>", unsafe_allow_html=True)
