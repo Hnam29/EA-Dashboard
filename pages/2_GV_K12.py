@@ -215,10 +215,17 @@ with st.sidebar:
     search_ten   = st.text_input("Tên giáo viên", placeholder="Nhập tên...", key="gv_ten")
     search_email = st.text_input("Email", placeholder="Nhập email...", key="gv_email")
     only_with_email = st.checkbox("Chỉ hiển thị dòng có Email", key="gv_only_email")
+    only_with_sdt   = st.checkbox("Chỉ hiển thị dòng có SĐT", key="gv_only_sdt")
 
     if st.button("🔄 Làm mới cache", use_container_width=True, key="gv_refresh"):
         load_data.clear()
         st.rerun()
+
+_EMPTY_VALUES = {"", "nan", "none", "<na>", "null"}
+
+def _has_value(s: pd.Series) -> pd.Series:
+    """True where the cell has real content."""
+    return ~s.astype(str).str.strip().str.lower().isin(_EMPTY_VALUES)
 
 # ── Áp dụng filter ────────────────────────────────────────────────────────────
 df = df_raw.copy()
@@ -237,13 +244,15 @@ if search_ten and COL_TEN in df.columns:
 if search_email and COL_EMAIL in df.columns:
     df = df[df[COL_EMAIL].str.contains(search_email, case=False, na=False)]
 if only_with_email and COL_EMAIL in df.columns:
-    df = df[(df[COL_EMAIL] != "") & (df[COL_EMAIL].str.lower() != "nan")]
+    df = df[_has_value(df[COL_EMAIL])]
+if only_with_sdt and COL_SDT in df.columns:
+    df = df[_has_value(df[COL_SDT])]
 
 # ── Helper đếm non-empty ──────────────────────────────────────────────────────
 def _count_nonempty(d: pd.DataFrame, col: str) -> int:
     if col not in d.columns:
         return 0
-    return int(d[col].replace({"nan": "", "": pd.NA}).dropna().count())
+    return int(_has_value(d[col]).sum())
 
 # ── Header ────────────────────────────────────────────────────────────────────
 render_page_header("GV – K12", "Danh sách Giáo viên K12 toàn quốc")
@@ -260,17 +269,10 @@ flt_email = _count_nonempty(df, COL_EMAIL)
 flt_sdt   = _count_nonempty(df, COL_SDT)
 
 metrics_row([
-    ("Tổng số Sở GD",     all_so,    "🏛️", "Toàn bộ"),
-    ("Tổng số Phòng GD",  all_phong, "🏫", "Toàn bộ"),
-    ("Tổng Email",         all_email, "📧", "Toàn bộ"),
-    ("Tổng SĐT",           all_sdt,   "📱", "Toàn bộ"),
-])
-st.markdown("<br>", unsafe_allow_html=True)
-metrics_row([
-    ("Sở GD (đã lọc)",    flt_so,    "🏛️", "Sau filter"),
-    ("Phòng GD (đã lọc)", flt_phong, "🏫", "Sau filter"),
-    ("Email (đã lọc)",     flt_email, "📧", "Sau filter"),
-    ("SĐT (đã lọc)",       flt_sdt,   "📱", "Sau filter"),
+    ("Sở GD",    flt_so,    "🏛️", f"/ {all_so:,} toàn bộ"),
+    ("Phòng GD", flt_phong, "🏫", f"/ {all_phong:,} toàn bộ"),
+    ("Email",    flt_email, "📧", f"/ {all_email:,} toàn bộ"),
+    ("SĐT",      flt_sdt,   "📱", f"/ {all_sdt:,} toàn bộ"),
 ])
 
 st.markdown("<br>", unsafe_allow_html=True)
